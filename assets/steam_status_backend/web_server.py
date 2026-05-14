@@ -1,0 +1,444 @@
+"""
+web_server.py — Flask Web 控制面板
+
+REST API 端点：
+  GET  /                    控制面板页面
+  GET  /api/state           获取当前连接状态和游戏状态
+  GET  /api/rich_presence_tokens  获取指定 AppID 的 Rich Presence 可用 token 列表
+  POST /api/status          设置自定义状态
+  DELETE /api/status        清除状态
+  POST /api/login           使用账号密码登录
+  POST /api/login_session   使用保存的凭证免密登录
+  POST /api/save_credentials 保存当前登录凭证
+  GET  /api/saved_accounts  获取所有已保存的账号列表
+  DELETE /api/saved_account 删除已保存的账号
+  POST /api/guard_code      提交 Steam Guard 验证码
+  POST /api/logout          登出（保留凭证）
+"""
+
+import logging
+from flask import Flask, jsonify, render_template, request
+
+logger = logging.getLogger(__name__)
+
+
+def _fetch_rich_presence_tokens(steam_client, app_id: int, language: str = "english") -> list[dict]:
+    """
+    通过 Steam Unified Messages 协议获取指定 AppID 的 Rich Presence localization tokens。
+
+    使用 Community.GetAppRichPresenceLocalization#1 接口，而非 PICS/appinfo，
+    因为 Rich Presence localization 数据不存储在 appinfo 中。
+
+    返回格式：[{"token": "#Status_Playing", "display": "Playing on %map%"}, ...]
+    其中 display 为对应语言的展示字符串（含变量占位符的原始格式）。
+
+    Args:
+        steam_client: 已登录的 SteamClient 实例
+        app_id:       目标游戏 AppID
+        language:     语言代码（如 english、schinese）
+
+    Raises:
+        RuntimeError: 请求失败或 AppID 不存在时
+    """
+    resp = steam_client.send_um_and_wait(
+        "Community.GetAppRichPresenceLocalization#1",
+        {"appid": app_id, "language": language},
+        timeout=10,
+    )
+
+    if resp is None:
+        raise RuntimeError(f"AppID {app_id} 的 Rich Presence localization 请求超时")
+
+    # EResult 非 1 表示失败（1 = k_EResultOK）
+    eresult = getattr(resp, "eresult", 1)
+    if eresult != 1:
+        raise RuntimeError(f"AppID {app_id} 请求失败，EResult={eresult}")
+
+    body = resp.body
+    token_lists = list(body.token_lists)
+
+    if not token_lists:
+        raise RuntimeError(f"AppID {app_id} 没有配置 Rich Presence localization 数据")
+
+    # 按优先级选语言：用户指定 → english → 第一个可用语言
+    def _find_lang(lang_code: str):
+        for tl in token_lists:
+            if tl.language == lang_code:
+                return tl
+        return None
+
+    lang_data = (
+        _find_lang(language)
+        or _find_lang("english")
+        or token_lists[0]
+    )
+
+    tokens = [
+        {"token": t.name, "display": t.value}
+        for t in lang_data.tokens
+        if t.name and isinstance(t.value, str)
+    ]
+
+    # 按 token key 排序，方便用户查找
+    tokens.sort(key=lambda t: t["token"])
+    return tokens
+
+
+def create_app(bot) -> Flask:
+    # 创建 Flask 应用
+    app = Flask(__name__)
+
+    # ── 页面路由 ─────────────────────────────────────────────────────────────
+
+    @app.route("/")
+    def index():
+        return render_template("index.html")
+
+    # ── API 路由 ─────────────────────────────────────────────────────────────
+
+    @app.route("/api/saved_accounts", methods=["GET"])
+    def saved_accounts():
+        """获取所有已保存的账号"""
+        from steam_bot import get_saved_accounts
+        names = get_saved_accounts()
+        accounts = [
+            {"username": name}
+            for name in names
+        ]
+        return jsonify({"accounts": accounts})
+
+    @app.route("/api/login", methods=["POST"])
+    def login():
+        """使用账号密码登录"""
+        data = request.get_json(silent=True) or {}
+        username = (data.get("username") or "").strip()
+        password = data.get("password") or ""
+        if not username or not password:
+            return jsonify({"success": False, "error": "用户名和密码不能为空"}), 400
+        
+        bot.login_with_credentials(username, password)
+        return jsonify({"success": True, "message": "正在登录..."})
+
+    @app.route("/api/login_session", methods=["POST"])
+    def login_session():
+        """使用保存的凭证免密登录"""
+        data = request.get_json(silent=True) or {}
+        username = (data.get("username") or "").strip()
+        if not username:
+            return jsonify({"success": False, "error": "缺少账号参数"}), 400
+            
+        from steam_bot import get_saved_refresh_token
+        rt = get_saved_refresh_token(username)
+        if not rt:
+            return jsonify({"success": False, "error": "未找到该账号的有效凭证"}), 400
+        
+        bot.login_with_refresh_token(username)
+        return jsonify({"success": True, "message": f"正在使用 {username} 免密登录..."})
+
+    @app.route("/api/save_credentials", methods=["POST"])
+    def save_credentials_api():
+        """保存当前登录的凭证"""
+        ok = bot.save_current_credentials()
+        if ok:
+            return jsonify({"success": True})
+        return jsonify({"success": False, "error": "当前无可保存的凭证"}), 400
+
+    @app.route("/api/saved_account", methods=["DELETE"])
+    def delete_saved_account():
+        """删除已保存的账号"""
+        data = request.get_json(silent=True) or {}
+        username = (data.get("username") or "").strip()
+        if not username:
+            return jsonify({"success": False, "error": "缺少账号参数"}), 400
+            
+        from steam_bot import delete_session
+        ok = delete_session(username)
+        if ok:
+            return jsonify({"success": True})
+        return jsonify({"success": False, "error": "删除失败，账号可能不存在"}), 404
+
+    @app.route("/api/state", methods=["GET"])
+    def get_state():
+        """返回当前连接状态 + 游戏状态"""
+        return jsonify({
+            "logged_in": bot.is_logged_in,
+            "username": bot.username,
+            "current_status": bot.current_status,
+            "current_app_id": bot.current_app_id,
+            "current_rich_text": bot.current_rich_text,
+            "current_persona_state": bot.current_persona_state.value,
+            "current_persona_state_name": bot.current_persona_state.name,
+        })
+
+    @app.route("/api/rich_presence_tokens", methods=["GET"])
+    def get_rich_presence_tokens():
+        """
+        获取指定 AppID 的 Rich Presence localization tokens。
+        通过 Steam PICS 协议（get_product_info）获取 appinfo，
+        解析其中的 localization.richpresence 结构。
+
+        Query params:
+            app_id: 游戏的 AppID（整数）
+            language: 语言（默认 english）
+        """
+        if not bot.is_logged_in:
+            return jsonify({"success": False, "error": "请先登录 Steam", "tokens": []}), 403
+
+        app_id_raw = request.args.get("app_id", "")
+        if not app_id_raw:
+            return jsonify({"success": False, "error": "缺少 app_id 参数", "tokens": []}), 400
+        try:
+            app_id = int(app_id_raw)
+        except ValueError:
+            return jsonify({"success": False, "error": "app_id 必须是整数", "tokens": []}), 400
+
+        language = request.args.get("language", "english")
+
+        try:
+            tokens = _fetch_rich_presence_tokens(bot.client, app_id, language)
+            return jsonify({"success": True, "app_id": app_id, "tokens": tokens})
+        except Exception as e:
+            logger.warning("fetch RP tokens 失败 (appid=%s): %s", app_id, e)
+            return jsonify({"success": False, "error": str(e), "tokens": []}), 500
+
+    @app.route("/api/debug/appinfo", methods=["GET"])
+    def debug_appinfo():
+        """
+        [调试] dump 指定 AppID 的完整 appinfo 结构（仅用于开发诊断）。
+        Query params: app_id
+        """
+        if not bot.is_logged_in:
+            return jsonify({"error": "未登录"}), 403
+        app_id_raw = request.args.get("app_id", "730")
+        app_id = int(app_id_raw)
+
+        result = bot.client.get_product_info(apps=[app_id], auto_access_tokens=True, timeout=15)
+        if not result or app_id not in result.get("apps", {}):
+            return jsonify({"error": f"AppID {app_id} 不存在"}), 404
+
+        app_data = result["apps"][app_id]
+
+        def _safe_dump(obj, depth=0):
+            """递归转换为 JSON 可序列化结构，截断过深或过长的内容"""
+            if depth > 6:
+                return "<<max_depth>>"
+            if isinstance(obj, dict):
+                return {k: _safe_dump(v, depth+1) for k, v in obj.items()}
+            if isinstance(obj, (list, tuple)):
+                return [_safe_dump(i, depth+1) for i in obj[:20]]
+            if isinstance(obj, (bytes, bytearray)):
+                return f"<bytes len={len(obj)}>"
+            return obj
+
+        return jsonify(_safe_dump(app_data))
+
+    @app.route("/api/debug/friends", methods=["GET"])
+    def debug_friends():
+        """[调试] 查看当前好友列表数量和 steamid_broadcast 是否正常。"""
+        if not bot.is_logged_in:
+            return jsonify({"error": "未登录"}), 403
+        try:
+            friends = list(bot.client.friends)
+            friend_ids = [int(u.steam_id) for u in friends]
+            return jsonify({
+                "friends_count": len(friends),
+                "friends_ready": bot.client.friends.ready,
+                "first_3_steamids": friend_ids[:3],
+            })
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/debug/my_rich_presence", methods=["GET"])
+    def debug_my_rp():
+        """
+        [调试] 读取 Steam CM 上当前账号的 Rich Presence 数据。
+        通过 ClientRequestFriendData 触发 CM 推送自身的 PersonaState，
+        从 PersonaState.friends[].rich_presence[]{key,value} 中读出实际的 RP KV 对。
+        """
+        if not bot.is_logged_in:
+            return jsonify({"error": "未登录"}), 403
+
+        import gevent
+        from steam.core.msg import MsgProto
+        from steam.enums.emsg import EMsg
+
+        my_steamid = int(bot.client.steam_id)
+
+        # 通过 ClientRequestFriendData 请求自己，触发 PersonaState 推送
+        req = MsgProto(EMsg.ClientRequestFriendData)
+        req.body.friends.append(my_steamid)
+        req.body.persona_state_requested = 0xFFFF  # 请求所有字段
+        bot.client.send(req)
+
+        # 等待 PersonaState，找到包含自己 SteamID 的 entry
+        my_rp = None
+        deadline = 8.0
+        start = gevent.time.time()
+        while gevent.time.time() - start < deadline:
+            resp = bot.client.wait_msg(EMsg.ClientPersonaState, timeout=2)
+            if resp is None:
+                break
+            for friend in resp.body.friends:
+                if int(friend.friendid) == my_steamid:
+                    my_rp = friend
+                    break
+            if my_rp is not None:
+                break
+
+        if my_rp is None:
+            # 方法 2：直接发 ClientRichPresenceRequest 读 raw kv
+            req2 = MsgProto(EMsg.ClientRichPresenceRequest)
+            req2.body.steamid_request.append(my_steamid)
+            bot.client.send(req2)
+            resp2 = bot.client.wait_msg(EMsg.ClientRichPresenceInfo, timeout=5)
+            if resp2 is None:
+                return jsonify({"error": "两种方法均超时", "my_steamid": str(my_steamid)}), 504
+
+            result = []
+            for entry in resp2.body.rich_presence:
+                kv_bytes = entry.rich_presence_kv
+                import vdf as _vdf
+                parsed = {}
+                if kv_bytes:
+                    try:
+                        parsed = _vdf.binary_loads(kv_bytes)
+                    except Exception as e:
+                        parsed = {"error": str(e)}
+                result.append({
+                    "steamid": str(entry.steamid_user),
+                    "kv_hex": kv_bytes.hex() if kv_bytes else "",
+                    "kv_parsed": parsed,
+                })
+            return jsonify({"method": "ClientRichPresenceInfo", "entries": result,
+                            "my_steamid": str(my_steamid)})
+
+        # 解析 rich_presence 字段（repeated {key, value}）
+        rp_kv = {pair.key: pair.value for pair in my_rp.rich_presence}
+
+        return jsonify({
+            "method": "PersonaState",
+            "my_steamid": str(my_steamid),
+            "game_played_app_id": my_rp.game_played_app_id,
+            "game_name": my_rp.game_name,
+            "gameid": str(my_rp.gameid),
+            "rich_presence_kv": rp_kv,
+            "raw_rich_presence_count": len(my_rp.rich_presence),
+        })
+
+
+    @app.route("/api/debug/my_rp_direct", methods=["GET"])
+    def debug_my_rp_direct():
+        """
+        [调试] 直接用 ClientRichPresenceRequest 读取自己的 RP 数据（不经过 PersonaState）。
+        用于准确验证 ClientRichPresenceUpload 是否真的存储在 Steam CM 上。
+        """
+        if not bot.is_logged_in:
+            return jsonify({"error": "未登录"}), 403
+
+        import gevent
+        from steam.core.msg import MsgProto
+        from steam.enums.emsg import EMsg
+        import vdf as _vdf
+
+        my_steamid = int(bot.client.steam_id)
+
+        req = MsgProto(EMsg.ClientRichPresenceRequest)
+        req.body.steamid_request.append(my_steamid)
+        bot.client.send(req)
+
+        resp = bot.client.wait_msg(EMsg.ClientRichPresenceInfo, timeout=8)
+        if resp is None:
+            return jsonify({"error": "ClientRichPresenceInfo 超时，Steam CM 未响应"}), 504
+
+        result = []
+        for entry in resp.body.rich_presence:
+            kv_bytes = entry.rich_presence_kv
+            parsed = {}
+            hex_str = ""
+            if kv_bytes:
+                hex_str = kv_bytes.hex()
+                try:
+                    parsed = _vdf.binary_loads(kv_bytes)
+                except Exception as e:
+                    parsed = {"parse_error": str(e), "raw_hex": hex_str}
+            result.append({
+                "steamid": str(entry.steamid_user),
+                "has_kv": bool(kv_bytes),
+                "kv_hex": hex_str,
+                "kv_parsed": parsed,
+            })
+
+        return jsonify({
+            "my_steamid": str(my_steamid),
+            "entries_count": len(result),
+            "entries": result,
+        })
+
+    @app.route("/api/status", methods=["POST"])
+    def set_status():
+        """设置自定义游戏状态"""
+        data = request.get_json(silent=True) or {}
+        status_text = (data.get("text") or "").strip()
+        app_id_raw = data.get("app_id")
+
+        if not status_text:
+            return jsonify({"success": False, "error": "状态文字不能为空"}), 400
+
+        # app_id 可以是整数或 null
+        app_id = int(app_id_raw) if app_id_raw not in (None, "", 0) else None
+        noisy = bool(data.get("noisy", False))
+        rich_text = (data.get("rich_text") or "").strip() or None
+
+        ok = bot.set_status(status_text, app_id, noisy, rich_text=rich_text)
+        if not ok:
+            return jsonify({"success": False, "error": "未登录，请先登录 Steam"}), 403
+        return jsonify({
+            "success": True,
+            "status": status_text,
+            "app_id": app_id,
+            "noisy": noisy,
+            "rich_text": rich_text,
+        })
+
+    @app.route("/api/status", methods=["DELETE"])
+    def clear_status():
+        """清除游戏状态"""
+        ok = bot.clear_status()
+        if not ok:
+            return jsonify({"success": False, "error": "未登录"}), 403
+        return jsonify({"success": True})
+
+    @app.route("/api/persona_state", methods=["POST"])
+    def set_persona_state():
+        """设置副状态（在线/忙碌/离开等）"""
+        from steam.enums import EPersonaState
+        data = request.get_json(silent=True) or {}
+        state_value = data.get("state")
+        if state_value is None:
+            return jsonify({"success": False, "error": "缺少 state 参数"}), 400
+        try:
+            state = EPersonaState(int(state_value))
+        except (ValueError, KeyError):
+            return jsonify({"success": False, "error": f"无效的副状态值: {state_value}"}), 400
+        ok = bot.set_persona_state(state)
+        if not ok:
+            return jsonify({"success": False, "error": "未登录，请先登录 Steam"}), 403
+        return jsonify({"success": True, "persona_state": state.value, "persona_state_name": state.name})
+
+    @app.route("/api/guard_code", methods=["POST"])
+    def submit_guard_code():
+        """接收来自 Web UI 的 Steam Guard 验证码"""
+        data = request.get_json(silent=True) or {}
+        code = (data.get("code") or "").strip()
+        if not code:
+            return jsonify({"success": False, "error": "验证码不能为空"}), 400
+        bot.provide_guard_code(code)
+        return jsonify({"success": True})
+
+    @app.route("/api/logout", methods=["POST"])
+    def logout():
+        """登出（保留凭证）"""
+        bot.logout()
+        return jsonify({"success": True})
+
+    return app
