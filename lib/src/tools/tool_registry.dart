@@ -103,6 +103,15 @@ const toolDefinitions = <ToolDefinition>[
     route: '/tools/password',
     syncEnabled: false,
   ),
+  ToolDefinition(
+    id: 'steamStatus',
+    categoryId: 'utility',
+    name: 'Steam 状态',
+    description: '管理 Steam 登录、自定义状态和 Rich Presence',
+    icon: Icons.sports_esports_outlined,
+    route: '/tools/steamStatus',
+    syncEnabled: true,
+  ),
 ];
 
 ToolDefinition toolById(String id) {

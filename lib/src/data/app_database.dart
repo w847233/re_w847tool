@@ -97,6 +97,44 @@ class PomodoroSettings extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+@DataClassName('SteamStatusPresetRecord')
+class SteamStatusPresetRecords extends Table {
+  @override
+  String get tableName => 'steam_status_presets';
+
+  TextColumn get id => text()();
+  TextColumn get steamStatusDisplayText => text().named('status_text')();
+  IntColumn get relatedSteamAppId => integer().named('app_id').nullable()();
+  TextColumn get richPresenceTokenText =>
+      text().named('rich_text').nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+  TextColumn get deviceId => text()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DataClassName('SteamStatusHistoryRecord')
+class SteamStatusHistoryRecords extends Table {
+  @override
+  String get tableName => 'steam_status_history_entries';
+
+  TextColumn get id => text()();
+  TextColumn get steamStatusDisplayText => text().named('status_text')();
+  IntColumn get relatedSteamAppId => integer().named('app_id').nullable()();
+  TextColumn get richPresenceTokenText =>
+      text().named('rich_text').nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+  TextColumn get deviceId => text()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 @DriftDatabase(
   tables: [
     AppSettings,
@@ -106,6 +144,8 @@ class PomodoroSettings extends Table {
     CountdownEvents,
     PomodoroSessions,
     PomodoroSettings,
+    SteamStatusPresetRecords,
+    SteamStatusHistoryRecords,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -114,7 +154,18 @@ class AppDatabase extends _$AppDatabase {
   static const _uuid = Uuid();
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+    onCreate: (migrator) async => migrator.createAll(),
+    onUpgrade: (migrator, from, to) async {
+      if (from < 2) {
+        await migrator.createTable(steamStatusPresetRecords);
+        await migrator.createTable(steamStatusHistoryRecords);
+      }
+    },
+  );
 
   Stream<String?> watchSettingValue(String key) {
     final query = select(appSettings)..where((row) => row.key.equals(key));
@@ -172,6 +223,25 @@ class AppDatabase extends _$AppDatabase {
         updatedAt: now,
         deletedAt: null,
         deviceId: deviceId,
+      ),
+    );
+  }
+
+  Future<void> updateNote(
+    String id, {
+    required String title,
+    required String content,
+  }) async {
+    final existing = await (select(
+      notes,
+    )..where((row) => row.id.equals(id))).getSingle();
+    final now = DateTime.now().toUtc();
+    await into(notes).insertOnConflictUpdate(
+      existing.copyWith(
+        title: title.trim().isEmpty ? '未命名便签' : title.trim(),
+        content: content.trim(),
+        updatedAt: now,
+        deviceId: await ensureDeviceId(),
       ),
     );
   }
@@ -355,6 +425,141 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
+  Stream<List<SteamStatusPresetRecord>> watchSteamStatusPresets() {
+    return (select(steamStatusPresetRecords)
+          ..where((row) => row.deletedAt.isNull())
+          ..orderBy([(row) => OrderingTerm.desc(row.updatedAt)]))
+        .watch();
+  }
+
+  Future<void> saveSteamStatusPreset({
+    required String text,
+    int? appId,
+    String? richText,
+  }) async {
+    final normalizedText = text.trim();
+    if (normalizedText.isEmpty) {
+      return;
+    }
+    final now = DateTime.now().toUtc();
+    await into(steamStatusPresetRecords).insert(
+      SteamStatusPresetRecord(
+        id: _uuid.v4(),
+        steamStatusDisplayText: normalizedText,
+        relatedSteamAppId: appId,
+        richPresenceTokenText: _normalizedRichText(richText),
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+        deviceId: await ensureDeviceId(),
+      ),
+    );
+  }
+
+  Future<void> deleteSteamStatusPreset(String id) async {
+    final existing = await (select(
+      steamStatusPresetRecords,
+    )..where((row) => row.id.equals(id))).getSingle();
+    final now = DateTime.now().toUtc();
+    await into(steamStatusPresetRecords).insertOnConflictUpdate(
+      existing.copyWith(
+        updatedAt: now,
+        deletedAt: Value(now),
+        deviceId: await ensureDeviceId(),
+      ),
+    );
+  }
+
+  Future<void> clearSteamStatusPresets() async {
+    final now = DateTime.now().toUtc();
+    final rows = await (select(
+      steamStatusPresetRecords,
+    )..where((row) => row.deletedAt.isNull())).get();
+    final deviceId = await ensureDeviceId();
+    for (final row in rows) {
+      await into(steamStatusPresetRecords).insertOnConflictUpdate(
+        row.copyWith(updatedAt: now, deletedAt: Value(now), deviceId: deviceId),
+      );
+    }
+  }
+
+  Stream<List<SteamStatusHistoryRecord>> watchSteamStatusHistoryEntries({
+    int limit = 30,
+  }) {
+    return (select(steamStatusHistoryRecords)
+          ..where((row) => row.deletedAt.isNull())
+          ..orderBy([(row) => OrderingTerm.desc(row.updatedAt)])
+          ..limit(limit))
+        .watch();
+  }
+
+  Future<void> addSteamStatusHistory({
+    required String text,
+    int? appId,
+    String? richText,
+  }) async {
+    final normalizedText = text.trim();
+    if (normalizedText.isEmpty) {
+      return;
+    }
+    final normalizedRichText = _normalizedRichText(richText);
+    final now = DateTime.now().toUtc();
+    final deviceId = await ensureDeviceId();
+    final existing =
+        await (select(steamStatusHistoryRecords)
+              ..where((row) => row.deletedAt.isNull())
+              ..where(
+                (row) => row.steamStatusDisplayText.equals(normalizedText),
+              )
+              ..where((row) {
+                if (appId == null) {
+                  return row.relatedSteamAppId.isNull();
+                }
+                return row.relatedSteamAppId.equals(appId);
+              })
+              ..where((row) {
+                if (normalizedRichText == null) {
+                  return row.richPresenceTokenText.isNull();
+                }
+                return row.richPresenceTokenText.equals(normalizedRichText);
+              }))
+            .getSingleOrNull();
+
+    if (existing != null) {
+      await into(steamStatusHistoryRecords).insertOnConflictUpdate(
+        existing.copyWith(
+          updatedAt: now,
+          richPresenceTokenText: Value(normalizedRichText),
+          deviceId: deviceId,
+        ),
+      );
+    } else {
+      await into(steamStatusHistoryRecords).insert(
+        SteamStatusHistoryRecord(
+          id: _uuid.v4(),
+          steamStatusDisplayText: normalizedText,
+          relatedSteamAppId: appId,
+          richPresenceTokenText: normalizedRichText,
+          createdAt: now,
+          updatedAt: now,
+          deletedAt: null,
+          deviceId: deviceId,
+        ),
+      );
+    }
+
+    final activeRows =
+        await (select(steamStatusHistoryRecords)
+              ..where((row) => row.deletedAt.isNull())
+              ..orderBy([(row) => OrderingTerm.desc(row.updatedAt)]))
+            .get();
+    for (final row in activeRows.skip(30)) {
+      await into(steamStatusHistoryRecords).insertOnConflictUpdate(
+        row.copyWith(updatedAt: now, deletedAt: Value(now), deviceId: deviceId),
+      );
+    }
+  }
+
   Future<Map<String, dynamic>> exportPlainSnapshot() async {
     final deviceId = await ensureDeviceId();
     return <String, dynamic>{
@@ -378,6 +583,12 @@ class AppDatabase extends _$AppDatabase {
       'pomodoroSettings': (await select(
         pomodoroSettings,
       ).get()).map(_pomodoroSettingToJson).toList(),
+      'steamStatusPresets': (await select(
+        steamStatusPresetRecords,
+      ).get()).map(_steamStatusPresetToJson).toList(),
+      'steamStatusHistoryEntries': (await select(
+        steamStatusHistoryRecords,
+      ).get()).map(_steamStatusHistoryEntryToJson).toList(),
     };
   }
 
@@ -390,6 +601,10 @@ class AppDatabase extends _$AppDatabase {
       await _importCountdownEvents(_list(snapshot['countdownEvents']));
       await _importPomodoroSessions(_list(snapshot['pomodoroSessions']));
       await _importPomodoroSettings(_list(snapshot['pomodoroSettings']));
+      await _importSteamStatusPresets(_list(snapshot['steamStatusPresets']));
+      await _importSteamStatusHistoryEntries(
+        _list(snapshot['steamStatusHistoryEntries']),
+      );
     });
   }
 
@@ -530,6 +745,52 @@ class AppDatabase extends _$AppDatabase {
       }
     }
   }
+
+  Future<void> _importSteamStatusPresets(
+    List<Map<String, dynamic>> rows,
+  ) async {
+    for (final row in rows) {
+      final incoming = SteamStatusPresetRecord(
+        id: row['id'] as String,
+        steamStatusDisplayText: row['text'] as String? ?? '',
+        relatedSteamAppId: row['appId'] as int?,
+        richPresenceTokenText: row['richText'] as String?,
+        createdAt: _date(row['createdAt']),
+        updatedAt: _date(row['updatedAt']),
+        deletedAt: _nullableDate(row['deletedAt']),
+        deviceId: row['deviceId'] as String? ?? 'remote',
+      );
+      final local = await (select(
+        steamStatusPresetRecords,
+      )..where((entry) => entry.id.equals(incoming.id))).getSingleOrNull();
+      if (_isNewerOrEqual(incoming.updatedAt, local?.updatedAt)) {
+        await into(steamStatusPresetRecords).insertOnConflictUpdate(incoming);
+      }
+    }
+  }
+
+  Future<void> _importSteamStatusHistoryEntries(
+    List<Map<String, dynamic>> rows,
+  ) async {
+    for (final row in rows) {
+      final incoming = SteamStatusHistoryRecord(
+        id: row['id'] as String,
+        steamStatusDisplayText: row['text'] as String? ?? '',
+        relatedSteamAppId: row['appId'] as int?,
+        richPresenceTokenText: row['richText'] as String?,
+        createdAt: _date(row['createdAt']),
+        updatedAt: _date(row['updatedAt']),
+        deletedAt: _nullableDate(row['deletedAt']),
+        deviceId: row['deviceId'] as String? ?? 'remote',
+      );
+      final local = await (select(
+        steamStatusHistoryRecords,
+      )..where((entry) => entry.id.equals(incoming.id))).getSingleOrNull();
+      if (_isNewerOrEqual(incoming.updatedAt, local?.updatedAt)) {
+        await into(steamStatusHistoryRecords).insertOnConflictUpdate(incoming);
+      }
+    }
+  }
 }
 
 LazyDatabase _openConnection() {
@@ -566,6 +827,11 @@ List<Map<String, dynamic>> _list(Object? value) {
       .whereType<Map>()
       .map((row) => Map<String, dynamic>.from(row))
       .toList();
+}
+
+String? _normalizedRichText(String? value) {
+  final trimmed = value?.trim() ?? '';
+  return trimmed.isEmpty ? null : trimmed;
 }
 
 Map<String, dynamic> _settingToJson(AppSetting row) => {
@@ -633,5 +899,29 @@ Map<String, dynamic> _pomodoroSettingToJson(PomodoroSetting row) => {
   'focusMinutes': row.focusMinutes,
   'breakMinutes': row.breakMinutes,
   'updatedAt': row.updatedAt.toUtc().toIso8601String(),
+  'deviceId': row.deviceId,
+};
+
+Map<String, dynamic> _steamStatusPresetToJson(SteamStatusPresetRecord row) => {
+  'id': row.id,
+  'text': row.steamStatusDisplayText,
+  'appId': row.relatedSteamAppId,
+  'richText': row.richPresenceTokenText,
+  'createdAt': row.createdAt.toUtc().toIso8601String(),
+  'updatedAt': row.updatedAt.toUtc().toIso8601String(),
+  'deletedAt': row.deletedAt?.toUtc().toIso8601String(),
+  'deviceId': row.deviceId,
+};
+
+Map<String, dynamic> _steamStatusHistoryEntryToJson(
+  SteamStatusHistoryRecord row,
+) => {
+  'id': row.id,
+  'text': row.steamStatusDisplayText,
+  'appId': row.relatedSteamAppId,
+  'richText': row.richPresenceTokenText,
+  'createdAt': row.createdAt.toUtc().toIso8601String(),
+  'updatedAt': row.updatedAt.toUtc().toIso8601String(),
+  'deletedAt': row.deletedAt?.toUtc().toIso8601String(),
   'deviceId': row.deviceId,
 };

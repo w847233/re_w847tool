@@ -74,6 +74,12 @@ flutter:
 
   assets:
     - assets/fonts/harmony_os_sans_sc/LICENSE.txt
+    - assets/steam_status_backend/app.py
+    - assets/steam_status_backend/web_server.py
+    - assets/steam_status_backend/steam_bot.py
+    - assets/steam_status_backend/requirements.txt
+    - assets/steam_status_backend/templates/index.html
+    - assets/steam_status_backend/static/style.css
 
   fonts:
     - family: HarmonyOS Sans SC

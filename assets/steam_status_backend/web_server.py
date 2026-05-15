@@ -7,6 +7,12 @@ REST API 端点：
   GET  /api/rich_presence_tokens  获取指定 AppID 的 Rich Presence 可用 token 列表
   POST /api/status          设置自定义状态
   DELETE /api/status        清除状态
+  GET  /api/cm_preference   获取 Steam CM 服务器优选状态
+  POST /api/cm_preference   开关登录前自动 CM 优选
+  POST /api/cm_test         立即测速并应用 Steam CM 优选
+  GET  /api/domain_preference 获取 Steam 全流程域名优选状态
+  POST /api/domain_preference 选择域名解析出的 IP
+  POST /api/domain_resolve   解析全流程域名 IP 与中文属地
   POST /api/login           使用账号密码登录
   POST /api/login_session   使用保存的凭证免密登录
   POST /api/save_credentials 保存当前登录凭证
@@ -168,7 +174,84 @@ def create_app(bot) -> Flask:
             "current_rich_text": bot.current_rich_text,
             "current_persona_state": bot.current_persona_state.value,
             "current_persona_state_name": bot.current_persona_state.name,
+            "current_persona_state_flags": bot.current_persona_state_flags,
+            "cm_preference": bot.get_cm_preference_status(),
+            "domain_preference": bot.get_domain_preference_status(),
         })
+
+    @app.route("/api/cm_preference", methods=["GET"])
+    def get_cm_preference():
+        """获取 Steam CM 服务器优选状态。"""
+        return jsonify({"success": True, "cm_preference": bot.get_cm_preference_status()})
+
+    @app.route("/api/cm_preference", methods=["POST"])
+    def set_cm_preference():
+        """开启或关闭登录前自动应用 CM 优选。"""
+        data = request.get_json(silent=True) or {}
+        enabled = bool(data.get("enabled", True))
+        status = bot.set_cm_auto_preference(enabled)
+        return jsonify({"success": True, "cm_preference": status})
+
+    @app.route("/api/cm_test", methods=["POST"])
+    def test_cm_servers():
+        """立即拉取、测速并应用 Steam CM 优选节点。"""
+        data = request.get_json(silent=True) or {}
+        max_count = data.get("max_count")
+        timeout_seconds = data.get("timeout_seconds")
+        try:
+            max_count = int(max_count) if max_count is not None else None
+            timeout_seconds = (
+                float(timeout_seconds) if timeout_seconds is not None else None
+            )
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "error": "测速参数无效"}), 400
+
+        status = bot.test_cm_servers(
+            max_count=max_count,
+            timeout_seconds=timeout_seconds,
+            apply=True,
+        )
+        if status.get("last_error"):
+            return jsonify({"success": False, "error": status["last_error"], "cm_preference": status}), 500
+        return jsonify({"success": True, "cm_preference": status})
+
+    @app.route("/api/domain_preference", methods=["GET"])
+    def get_domain_preference():
+        """获取 Steam 全流程域名优选状态。"""
+        return jsonify({
+            "success": True,
+            "domain_preference": bot.get_domain_preference_status(),
+        })
+
+    @app.route("/api/domain_resolve", methods=["POST"])
+    def resolve_domains():
+        """解析 Steam 全流程域名，返回 IP、延迟和中文属地。"""
+        data = request.get_json(silent=True) or {}
+        domains = data.get("domains")
+        if domains is not None and not isinstance(domains, list):
+            return jsonify({"success": False, "error": "domains 必须是数组"}), 400
+        status = bot.resolve_steam_domains(domains=domains)
+        return jsonify({"success": True, "domain_preference": status})
+
+    @app.route("/api/domain_preference", methods=["POST"])
+    def set_domain_preference():
+        """更新某个域名是否启用 DNS 优选及选择的 IP。"""
+        data = request.get_json(silent=True) or {}
+        domain = (data.get("domain") or "").strip()
+        if not domain:
+            return jsonify({"success": False, "error": "缺少 domain 参数"}), 400
+        selected_ips = data.get("selected_ips")
+        if selected_ips is not None and not isinstance(selected_ips, list):
+            return jsonify({"success": False, "error": "selected_ips 必须是数组"}), 400
+        try:
+            status = bot.update_domain_preference(
+                domain,
+                enabled=data.get("enabled"),
+                selected_ips=selected_ips,
+            )
+        except ValueError as e:
+            return jsonify({"success": False, "error": str(e)}), 400
+        return jsonify({"success": True, "domain_preference": status})
 
     @app.route("/api/rich_presence_tokens", methods=["GET"])
     def get_rich_presence_tokens():
@@ -424,6 +507,22 @@ def create_app(bot) -> Flask:
         if not ok:
             return jsonify({"success": False, "error": "未登录，请先登录 Steam"}), 403
         return jsonify({"success": True, "persona_state": state.value, "persona_state_name": state.name})
+
+    @app.route("/api/persona_state_flags", methods=["POST"])
+    def set_persona_state_flags():
+        """设置 Persona State Flags（客户端类型、VR、RP 等特殊标记）"""
+        data = request.get_json(silent=True) or {}
+        flags_value = data.get("flags")
+        if flags_value is None:
+            return jsonify({"success": False, "error": "缺少 flags 参数"}), 400
+        try:
+            flags = int(flags_value)
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "error": f"无效的 flags 值: {flags_value}"}), 400
+        ok = bot.set_persona_state_flags(flags)
+        if not ok:
+            return jsonify({"success": False, "error": "未登录或 flags 包含不支持的位"}), 403
+        return jsonify({"success": True, "persona_state_flags": flags})
 
     @app.route("/api/guard_code", methods=["POST"])
     def submit_guard_code():

@@ -8,6 +8,9 @@ import 'package:personal_toolbox/src/data/app_database.dart';
 import 'package:personal_toolbox/src/data/database_provider.dart';
 import 'package:personal_toolbox/src/home/home_layout_repository.dart';
 import 'package:personal_toolbox/src/settings/settings_repository.dart';
+import 'package:personal_toolbox/src/steam_status/steam_status_models.dart';
+import 'package:personal_toolbox/src/steam_status/steam_status_repository.dart';
+import 'package:personal_toolbox/src/steam_status/steam_status_service.dart';
 
 void main() {
   setUpAll(() {
@@ -146,6 +149,155 @@ void main() {
 
     await _disposeApp(tester);
   });
+
+  testWidgets('导航中包含 Steam 状态工具并可进入页面', (tester) async {
+    await _setDesktopSize(tester);
+    final controller = _FakeSteamStatusController();
+    addTearDown(controller.dispose);
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(database),
+          steamStatusControllerProvider.overrideWithValue(controller),
+        ],
+        child: const PersonalToolboxApp(),
+      ),
+    );
+    await _pumpUi(tester);
+
+    expect(find.text('Steam 状态'), findsWidgets);
+
+    await tester.tap(find.text('Steam 状态').first);
+    await _pumpUi(tester);
+
+    expect(find.text('连接与账号'), findsOneWidget);
+    expect(find.text('Steam 侧车服务已就绪'), findsOneWidget);
+    expect(find.text('当前未登录 Steam'), findsOneWidget);
+
+    await _disposeApp(tester);
+  });
+
+  testWidgets('Steam 登录处理中会禁用登录入口并显示进度', (tester) async {
+    await _setDesktopSize(tester);
+    final controller = _FakeSteamStatusController(
+      state: const SteamToolState(
+        backendPhase: SteamBackendPhase.ready,
+        remoteState: SteamRemoteState.empty,
+        savedAccounts: <SteamAccount>[SteamAccount(username: 'saved_user')],
+        loginInProgress: true,
+        loginMessage: '正在向 Steam 提交登录请求...',
+      ),
+    );
+    addTearDown(controller.dispose);
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(database),
+          steamStatusControllerProvider.overrideWithValue(controller),
+        ],
+        child: const PersonalToolboxApp(),
+      ),
+    );
+    await _pumpUi(tester);
+
+    await tester.tap(find.text('Steam 状态').first);
+    await _pumpUi(tester);
+
+    expect(find.text('正在向 Steam 提交登录请求...'), findsWidgets);
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    final loginButton = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, '正在登录...'),
+    );
+    expect(loginButton.onPressed, isNull);
+    final savedLoginButton = tester.widget<OutlinedButton>(
+      find.widgetWithText(OutlinedButton, '免密登录'),
+    );
+    expect(savedLoginButton.onPressed, isNull);
+
+    await _disposeApp(tester);
+  });
+
+  testWidgets('Steam 运行期错误会显示在页面横幅', (tester) async {
+    await _setDesktopSize(tester);
+    final controller = _FakeSteamStatusController(
+      state: const SteamToolState(
+        backendPhase: SteamBackendPhase.ready,
+        backendError: '连接 Steam CM 服务器失败：测试错误',
+        remoteState: SteamRemoteState.empty,
+        savedAccounts: <SteamAccount>[],
+      ),
+    );
+    addTearDown(controller.dispose);
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(database),
+          steamStatusControllerProvider.overrideWithValue(controller),
+        ],
+        child: const PersonalToolboxApp(),
+      ),
+    );
+    await _pumpUi(tester);
+
+    await tester.tap(find.text('Steam 状态').first);
+    await _pumpUi(tester);
+
+    expect(find.text('Steam 操作失败'), findsOneWidget);
+    expect(find.text('连接 Steam CM 服务器失败：测试错误'), findsOneWidget);
+
+    await _disposeApp(tester);
+  });
+
+  testWidgets('Steam 状态提示会用最新一次结果覆盖旧提示', (tester) async {
+    await _setDesktopSize(tester);
+    final controller = _FakeSteamStatusController(
+      state: const SteamToolState(
+        backendPhase: SteamBackendPhase.ready,
+        remoteState: SteamRemoteState(
+          loggedIn: true,
+          username: 'tester',
+          personaState: 1,
+          personaStateName: 'Online',
+          personaStateFlags: 0,
+        ),
+        savedAccounts: <SteamAccount>[],
+      ),
+    );
+    addTearDown(controller.dispose);
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(database),
+          steamStatusControllerProvider.overrideWithValue(controller),
+        ],
+        child: const PersonalToolboxApp(),
+      ),
+    );
+    await _pumpUi(tester);
+
+    await tester.tap(find.text('Steam 状态').first);
+    await _pumpUi(tester);
+
+    await tester.tap(find.text('离开').first);
+    await tester.pump();
+    expect(find.text('副状态已切换为离开'), findsOneWidget);
+
+    await tester.tap(find.text('忙碌').first);
+    await tester.pump();
+
+    expect(find.text('副状态已切换为离开'), findsNothing);
+    expect(find.text('副状态已切换为忙碌'), findsOneWidget);
+
+    await _disposeApp(tester);
+  });
 }
 
 Future<AppDatabase> _pumpApp(WidgetTester tester) async {
@@ -183,4 +335,51 @@ Future<void> _setMobileSize(WidgetTester tester) async {
   tester.view.physicalSize = const Size(390, 900);
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
+}
+
+class _FakeSteamStatusController extends SteamStatusController {
+  _FakeSteamStatusController._(this._database, this._state)
+    : super(repository: SteamStatusRepository(_database));
+
+  factory _FakeSteamStatusController({SteamToolState? state}) {
+    final database = AppDatabase(NativeDatabase.memory());
+    return _FakeSteamStatusController._(
+      database,
+      state ??
+          const SteamToolState(
+            backendPhase: SteamBackendPhase.ready,
+            remoteState: SteamRemoteState.empty,
+            savedAccounts: <SteamAccount>[],
+          ),
+    );
+  }
+
+  final AppDatabase _database;
+  final SteamToolState _state;
+
+  @override
+  Stream<SteamToolState> get stream => Stream.value(_state);
+
+  @override
+  void start() {}
+
+  @override
+  Future<SteamActionResult> setPersonaState(int state) async {
+    final label = switch (state) {
+      0 => '离线',
+      1 => '在线',
+      2 => '忙碌',
+      3 => '离开',
+      4 => '打盹',
+      5 => '想交易',
+      6 => '想玩游戏',
+      _ => '未知',
+    };
+    return SteamActionResult(success: true, message: '副状态已切换为$label');
+  }
+
+  @override
+  Future<void> dispose() async {
+    await _database.close();
+  }
 }

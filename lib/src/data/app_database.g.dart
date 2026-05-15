@@ -3146,6 +3146,1110 @@ class PomodoroSettingsCompanion extends UpdateCompanion<PomodoroSetting> {
   }
 }
 
+class $SteamStatusPresetRecordsTable extends SteamStatusPresetRecords
+    with TableInfo<$SteamStatusPresetRecordsTable, SteamStatusPresetRecord> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SteamStatusPresetRecordsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _steamStatusDisplayTextMeta =
+      const VerificationMeta('steamStatusDisplayText');
+  @override
+  late final GeneratedColumn<String> steamStatusDisplayText =
+      GeneratedColumn<String>(
+        'status_text',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      );
+  static const VerificationMeta _relatedSteamAppIdMeta = const VerificationMeta(
+    'relatedSteamAppId',
+  );
+  @override
+  late final GeneratedColumn<int> relatedSteamAppId = GeneratedColumn<int>(
+    'app_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _richPresenceTokenTextMeta =
+      const VerificationMeta('richPresenceTokenText');
+  @override
+  late final GeneratedColumn<String> richPresenceTokenText =
+      GeneratedColumn<String>(
+        'rich_text',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> deletedAt = GeneratedColumn<DateTime>(
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _deviceIdMeta = const VerificationMeta(
+    'deviceId',
+  );
+  @override
+  late final GeneratedColumn<String> deviceId = GeneratedColumn<String>(
+    'device_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    steamStatusDisplayText,
+    relatedSteamAppId,
+    richPresenceTokenText,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    deviceId,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'steam_status_presets';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SteamStatusPresetRecord> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('status_text')) {
+      context.handle(
+        _steamStatusDisplayTextMeta,
+        steamStatusDisplayText.isAcceptableOrUnknown(
+          data['status_text']!,
+          _steamStatusDisplayTextMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_steamStatusDisplayTextMeta);
+    }
+    if (data.containsKey('app_id')) {
+      context.handle(
+        _relatedSteamAppIdMeta,
+        relatedSteamAppId.isAcceptableOrUnknown(
+          data['app_id']!,
+          _relatedSteamAppIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('rich_text')) {
+      context.handle(
+        _richPresenceTokenTextMeta,
+        richPresenceTokenText.isAcceptableOrUnknown(
+          data['rich_text']!,
+          _richPresenceTokenTextMeta,
+        ),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    }
+    if (data.containsKey('device_id')) {
+      context.handle(
+        _deviceIdMeta,
+        deviceId.isAcceptableOrUnknown(data['device_id']!, _deviceIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_deviceIdMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SteamStatusPresetRecord map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SteamStatusPresetRecord(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      steamStatusDisplayText: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}status_text'],
+      )!,
+      relatedSteamAppId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}app_id'],
+      ),
+      richPresenceTokenText: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}rich_text'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}deleted_at'],
+      ),
+      deviceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}device_id'],
+      )!,
+    );
+  }
+
+  @override
+  $SteamStatusPresetRecordsTable createAlias(String alias) {
+    return $SteamStatusPresetRecordsTable(attachedDatabase, alias);
+  }
+}
+
+class SteamStatusPresetRecord extends DataClass
+    implements Insertable<SteamStatusPresetRecord> {
+  final String id;
+  final String steamStatusDisplayText;
+  final int? relatedSteamAppId;
+  final String? richPresenceTokenText;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final DateTime? deletedAt;
+  final String deviceId;
+  const SteamStatusPresetRecord({
+    required this.id,
+    required this.steamStatusDisplayText,
+    this.relatedSteamAppId,
+    this.richPresenceTokenText,
+    required this.createdAt,
+    required this.updatedAt,
+    this.deletedAt,
+    required this.deviceId,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['status_text'] = Variable<String>(steamStatusDisplayText);
+    if (!nullToAbsent || relatedSteamAppId != null) {
+      map['app_id'] = Variable<int>(relatedSteamAppId);
+    }
+    if (!nullToAbsent || richPresenceTokenText != null) {
+      map['rich_text'] = Variable<String>(richPresenceTokenText);
+    }
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt);
+    }
+    map['device_id'] = Variable<String>(deviceId);
+    return map;
+  }
+
+  SteamStatusPresetRecordsCompanion toCompanion(bool nullToAbsent) {
+    return SteamStatusPresetRecordsCompanion(
+      id: Value(id),
+      steamStatusDisplayText: Value(steamStatusDisplayText),
+      relatedSteamAppId: relatedSteamAppId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(relatedSteamAppId),
+      richPresenceTokenText: richPresenceTokenText == null && nullToAbsent
+          ? const Value.absent()
+          : Value(richPresenceTokenText),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
+      deviceId: Value(deviceId),
+    );
+  }
+
+  factory SteamStatusPresetRecord.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SteamStatusPresetRecord(
+      id: serializer.fromJson<String>(json['id']),
+      steamStatusDisplayText: serializer.fromJson<String>(
+        json['steamStatusDisplayText'],
+      ),
+      relatedSteamAppId: serializer.fromJson<int?>(json['relatedSteamAppId']),
+      richPresenceTokenText: serializer.fromJson<String?>(
+        json['richPresenceTokenText'],
+      ),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
+      deviceId: serializer.fromJson<String>(json['deviceId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'steamStatusDisplayText': serializer.toJson<String>(
+        steamStatusDisplayText,
+      ),
+      'relatedSteamAppId': serializer.toJson<int?>(relatedSteamAppId),
+      'richPresenceTokenText': serializer.toJson<String?>(
+        richPresenceTokenText,
+      ),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
+      'deviceId': serializer.toJson<String>(deviceId),
+    };
+  }
+
+  SteamStatusPresetRecord copyWith({
+    String? id,
+    String? steamStatusDisplayText,
+    Value<int?> relatedSteamAppId = const Value.absent(),
+    Value<String?> richPresenceTokenText = const Value.absent(),
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
+    String? deviceId,
+  }) => SteamStatusPresetRecord(
+    id: id ?? this.id,
+    steamStatusDisplayText:
+        steamStatusDisplayText ?? this.steamStatusDisplayText,
+    relatedSteamAppId: relatedSteamAppId.present
+        ? relatedSteamAppId.value
+        : this.relatedSteamAppId,
+    richPresenceTokenText: richPresenceTokenText.present
+        ? richPresenceTokenText.value
+        : this.richPresenceTokenText,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    deviceId: deviceId ?? this.deviceId,
+  );
+  SteamStatusPresetRecord copyWithCompanion(
+    SteamStatusPresetRecordsCompanion data,
+  ) {
+    return SteamStatusPresetRecord(
+      id: data.id.present ? data.id.value : this.id,
+      steamStatusDisplayText: data.steamStatusDisplayText.present
+          ? data.steamStatusDisplayText.value
+          : this.steamStatusDisplayText,
+      relatedSteamAppId: data.relatedSteamAppId.present
+          ? data.relatedSteamAppId.value
+          : this.relatedSteamAppId,
+      richPresenceTokenText: data.richPresenceTokenText.present
+          ? data.richPresenceTokenText.value
+          : this.richPresenceTokenText,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      deviceId: data.deviceId.present ? data.deviceId.value : this.deviceId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SteamStatusPresetRecord(')
+          ..write('id: $id, ')
+          ..write('steamStatusDisplayText: $steamStatusDisplayText, ')
+          ..write('relatedSteamAppId: $relatedSteamAppId, ')
+          ..write('richPresenceTokenText: $richPresenceTokenText, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('deviceId: $deviceId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    steamStatusDisplayText,
+    relatedSteamAppId,
+    richPresenceTokenText,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    deviceId,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SteamStatusPresetRecord &&
+          other.id == this.id &&
+          other.steamStatusDisplayText == this.steamStatusDisplayText &&
+          other.relatedSteamAppId == this.relatedSteamAppId &&
+          other.richPresenceTokenText == this.richPresenceTokenText &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt &&
+          other.deletedAt == this.deletedAt &&
+          other.deviceId == this.deviceId);
+}
+
+class SteamStatusPresetRecordsCompanion
+    extends UpdateCompanion<SteamStatusPresetRecord> {
+  final Value<String> id;
+  final Value<String> steamStatusDisplayText;
+  final Value<int?> relatedSteamAppId;
+  final Value<String?> richPresenceTokenText;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  final Value<DateTime?> deletedAt;
+  final Value<String> deviceId;
+  final Value<int> rowid;
+  const SteamStatusPresetRecordsCompanion({
+    this.id = const Value.absent(),
+    this.steamStatusDisplayText = const Value.absent(),
+    this.relatedSteamAppId = const Value.absent(),
+    this.richPresenceTokenText = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.deviceId = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SteamStatusPresetRecordsCompanion.insert({
+    required String id,
+    required String steamStatusDisplayText,
+    this.relatedSteamAppId = const Value.absent(),
+    this.richPresenceTokenText = const Value.absent(),
+    required DateTime createdAt,
+    required DateTime updatedAt,
+    this.deletedAt = const Value.absent(),
+    required String deviceId,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       steamStatusDisplayText = Value(steamStatusDisplayText),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt),
+       deviceId = Value(deviceId);
+  static Insertable<SteamStatusPresetRecord> custom({
+    Expression<String>? id,
+    Expression<String>? steamStatusDisplayText,
+    Expression<int>? relatedSteamAppId,
+    Expression<String>? richPresenceTokenText,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? updatedAt,
+    Expression<DateTime>? deletedAt,
+    Expression<String>? deviceId,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (steamStatusDisplayText != null) 'status_text': steamStatusDisplayText,
+      if (relatedSteamAppId != null) 'app_id': relatedSteamAppId,
+      if (richPresenceTokenText != null) 'rich_text': richPresenceTokenText,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (deviceId != null) 'device_id': deviceId,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SteamStatusPresetRecordsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? steamStatusDisplayText,
+    Value<int?>? relatedSteamAppId,
+    Value<String?>? richPresenceTokenText,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<DateTime?>? deletedAt,
+    Value<String>? deviceId,
+    Value<int>? rowid,
+  }) {
+    return SteamStatusPresetRecordsCompanion(
+      id: id ?? this.id,
+      steamStatusDisplayText:
+          steamStatusDisplayText ?? this.steamStatusDisplayText,
+      relatedSteamAppId: relatedSteamAppId ?? this.relatedSteamAppId,
+      richPresenceTokenText:
+          richPresenceTokenText ?? this.richPresenceTokenText,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+      deviceId: deviceId ?? this.deviceId,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (steamStatusDisplayText.present) {
+      map['status_text'] = Variable<String>(steamStatusDisplayText.value);
+    }
+    if (relatedSteamAppId.present) {
+      map['app_id'] = Variable<int>(relatedSteamAppId.value);
+    }
+    if (richPresenceTokenText.present) {
+      map['rich_text'] = Variable<String>(richPresenceTokenText.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt.value);
+    }
+    if (deviceId.present) {
+      map['device_id'] = Variable<String>(deviceId.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SteamStatusPresetRecordsCompanion(')
+          ..write('id: $id, ')
+          ..write('steamStatusDisplayText: $steamStatusDisplayText, ')
+          ..write('relatedSteamAppId: $relatedSteamAppId, ')
+          ..write('richPresenceTokenText: $richPresenceTokenText, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('deviceId: $deviceId, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SteamStatusHistoryRecordsTable extends SteamStatusHistoryRecords
+    with TableInfo<$SteamStatusHistoryRecordsTable, SteamStatusHistoryRecord> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SteamStatusHistoryRecordsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _steamStatusDisplayTextMeta =
+      const VerificationMeta('steamStatusDisplayText');
+  @override
+  late final GeneratedColumn<String> steamStatusDisplayText =
+      GeneratedColumn<String>(
+        'status_text',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      );
+  static const VerificationMeta _relatedSteamAppIdMeta = const VerificationMeta(
+    'relatedSteamAppId',
+  );
+  @override
+  late final GeneratedColumn<int> relatedSteamAppId = GeneratedColumn<int>(
+    'app_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _richPresenceTokenTextMeta =
+      const VerificationMeta('richPresenceTokenText');
+  @override
+  late final GeneratedColumn<String> richPresenceTokenText =
+      GeneratedColumn<String>(
+        'rich_text',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> deletedAt = GeneratedColumn<DateTime>(
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _deviceIdMeta = const VerificationMeta(
+    'deviceId',
+  );
+  @override
+  late final GeneratedColumn<String> deviceId = GeneratedColumn<String>(
+    'device_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    steamStatusDisplayText,
+    relatedSteamAppId,
+    richPresenceTokenText,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    deviceId,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'steam_status_history_entries';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SteamStatusHistoryRecord> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('status_text')) {
+      context.handle(
+        _steamStatusDisplayTextMeta,
+        steamStatusDisplayText.isAcceptableOrUnknown(
+          data['status_text']!,
+          _steamStatusDisplayTextMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_steamStatusDisplayTextMeta);
+    }
+    if (data.containsKey('app_id')) {
+      context.handle(
+        _relatedSteamAppIdMeta,
+        relatedSteamAppId.isAcceptableOrUnknown(
+          data['app_id']!,
+          _relatedSteamAppIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('rich_text')) {
+      context.handle(
+        _richPresenceTokenTextMeta,
+        richPresenceTokenText.isAcceptableOrUnknown(
+          data['rich_text']!,
+          _richPresenceTokenTextMeta,
+        ),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    }
+    if (data.containsKey('device_id')) {
+      context.handle(
+        _deviceIdMeta,
+        deviceId.isAcceptableOrUnknown(data['device_id']!, _deviceIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_deviceIdMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SteamStatusHistoryRecord map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SteamStatusHistoryRecord(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      steamStatusDisplayText: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}status_text'],
+      )!,
+      relatedSteamAppId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}app_id'],
+      ),
+      richPresenceTokenText: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}rich_text'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}deleted_at'],
+      ),
+      deviceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}device_id'],
+      )!,
+    );
+  }
+
+  @override
+  $SteamStatusHistoryRecordsTable createAlias(String alias) {
+    return $SteamStatusHistoryRecordsTable(attachedDatabase, alias);
+  }
+}
+
+class SteamStatusHistoryRecord extends DataClass
+    implements Insertable<SteamStatusHistoryRecord> {
+  final String id;
+  final String steamStatusDisplayText;
+  final int? relatedSteamAppId;
+  final String? richPresenceTokenText;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final DateTime? deletedAt;
+  final String deviceId;
+  const SteamStatusHistoryRecord({
+    required this.id,
+    required this.steamStatusDisplayText,
+    this.relatedSteamAppId,
+    this.richPresenceTokenText,
+    required this.createdAt,
+    required this.updatedAt,
+    this.deletedAt,
+    required this.deviceId,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['status_text'] = Variable<String>(steamStatusDisplayText);
+    if (!nullToAbsent || relatedSteamAppId != null) {
+      map['app_id'] = Variable<int>(relatedSteamAppId);
+    }
+    if (!nullToAbsent || richPresenceTokenText != null) {
+      map['rich_text'] = Variable<String>(richPresenceTokenText);
+    }
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt);
+    }
+    map['device_id'] = Variable<String>(deviceId);
+    return map;
+  }
+
+  SteamStatusHistoryRecordsCompanion toCompanion(bool nullToAbsent) {
+    return SteamStatusHistoryRecordsCompanion(
+      id: Value(id),
+      steamStatusDisplayText: Value(steamStatusDisplayText),
+      relatedSteamAppId: relatedSteamAppId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(relatedSteamAppId),
+      richPresenceTokenText: richPresenceTokenText == null && nullToAbsent
+          ? const Value.absent()
+          : Value(richPresenceTokenText),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
+      deviceId: Value(deviceId),
+    );
+  }
+
+  factory SteamStatusHistoryRecord.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SteamStatusHistoryRecord(
+      id: serializer.fromJson<String>(json['id']),
+      steamStatusDisplayText: serializer.fromJson<String>(
+        json['steamStatusDisplayText'],
+      ),
+      relatedSteamAppId: serializer.fromJson<int?>(json['relatedSteamAppId']),
+      richPresenceTokenText: serializer.fromJson<String?>(
+        json['richPresenceTokenText'],
+      ),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
+      deviceId: serializer.fromJson<String>(json['deviceId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'steamStatusDisplayText': serializer.toJson<String>(
+        steamStatusDisplayText,
+      ),
+      'relatedSteamAppId': serializer.toJson<int?>(relatedSteamAppId),
+      'richPresenceTokenText': serializer.toJson<String?>(
+        richPresenceTokenText,
+      ),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
+      'deviceId': serializer.toJson<String>(deviceId),
+    };
+  }
+
+  SteamStatusHistoryRecord copyWith({
+    String? id,
+    String? steamStatusDisplayText,
+    Value<int?> relatedSteamAppId = const Value.absent(),
+    Value<String?> richPresenceTokenText = const Value.absent(),
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
+    String? deviceId,
+  }) => SteamStatusHistoryRecord(
+    id: id ?? this.id,
+    steamStatusDisplayText:
+        steamStatusDisplayText ?? this.steamStatusDisplayText,
+    relatedSteamAppId: relatedSteamAppId.present
+        ? relatedSteamAppId.value
+        : this.relatedSteamAppId,
+    richPresenceTokenText: richPresenceTokenText.present
+        ? richPresenceTokenText.value
+        : this.richPresenceTokenText,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    deviceId: deviceId ?? this.deviceId,
+  );
+  SteamStatusHistoryRecord copyWithCompanion(
+    SteamStatusHistoryRecordsCompanion data,
+  ) {
+    return SteamStatusHistoryRecord(
+      id: data.id.present ? data.id.value : this.id,
+      steamStatusDisplayText: data.steamStatusDisplayText.present
+          ? data.steamStatusDisplayText.value
+          : this.steamStatusDisplayText,
+      relatedSteamAppId: data.relatedSteamAppId.present
+          ? data.relatedSteamAppId.value
+          : this.relatedSteamAppId,
+      richPresenceTokenText: data.richPresenceTokenText.present
+          ? data.richPresenceTokenText.value
+          : this.richPresenceTokenText,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      deviceId: data.deviceId.present ? data.deviceId.value : this.deviceId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SteamStatusHistoryRecord(')
+          ..write('id: $id, ')
+          ..write('steamStatusDisplayText: $steamStatusDisplayText, ')
+          ..write('relatedSteamAppId: $relatedSteamAppId, ')
+          ..write('richPresenceTokenText: $richPresenceTokenText, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('deviceId: $deviceId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    steamStatusDisplayText,
+    relatedSteamAppId,
+    richPresenceTokenText,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    deviceId,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SteamStatusHistoryRecord &&
+          other.id == this.id &&
+          other.steamStatusDisplayText == this.steamStatusDisplayText &&
+          other.relatedSteamAppId == this.relatedSteamAppId &&
+          other.richPresenceTokenText == this.richPresenceTokenText &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt &&
+          other.deletedAt == this.deletedAt &&
+          other.deviceId == this.deviceId);
+}
+
+class SteamStatusHistoryRecordsCompanion
+    extends UpdateCompanion<SteamStatusHistoryRecord> {
+  final Value<String> id;
+  final Value<String> steamStatusDisplayText;
+  final Value<int?> relatedSteamAppId;
+  final Value<String?> richPresenceTokenText;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  final Value<DateTime?> deletedAt;
+  final Value<String> deviceId;
+  final Value<int> rowid;
+  const SteamStatusHistoryRecordsCompanion({
+    this.id = const Value.absent(),
+    this.steamStatusDisplayText = const Value.absent(),
+    this.relatedSteamAppId = const Value.absent(),
+    this.richPresenceTokenText = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.deviceId = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SteamStatusHistoryRecordsCompanion.insert({
+    required String id,
+    required String steamStatusDisplayText,
+    this.relatedSteamAppId = const Value.absent(),
+    this.richPresenceTokenText = const Value.absent(),
+    required DateTime createdAt,
+    required DateTime updatedAt,
+    this.deletedAt = const Value.absent(),
+    required String deviceId,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       steamStatusDisplayText = Value(steamStatusDisplayText),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt),
+       deviceId = Value(deviceId);
+  static Insertable<SteamStatusHistoryRecord> custom({
+    Expression<String>? id,
+    Expression<String>? steamStatusDisplayText,
+    Expression<int>? relatedSteamAppId,
+    Expression<String>? richPresenceTokenText,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? updatedAt,
+    Expression<DateTime>? deletedAt,
+    Expression<String>? deviceId,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (steamStatusDisplayText != null) 'status_text': steamStatusDisplayText,
+      if (relatedSteamAppId != null) 'app_id': relatedSteamAppId,
+      if (richPresenceTokenText != null) 'rich_text': richPresenceTokenText,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (deviceId != null) 'device_id': deviceId,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SteamStatusHistoryRecordsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? steamStatusDisplayText,
+    Value<int?>? relatedSteamAppId,
+    Value<String?>? richPresenceTokenText,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<DateTime?>? deletedAt,
+    Value<String>? deviceId,
+    Value<int>? rowid,
+  }) {
+    return SteamStatusHistoryRecordsCompanion(
+      id: id ?? this.id,
+      steamStatusDisplayText:
+          steamStatusDisplayText ?? this.steamStatusDisplayText,
+      relatedSteamAppId: relatedSteamAppId ?? this.relatedSteamAppId,
+      richPresenceTokenText:
+          richPresenceTokenText ?? this.richPresenceTokenText,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+      deviceId: deviceId ?? this.deviceId,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (steamStatusDisplayText.present) {
+      map['status_text'] = Variable<String>(steamStatusDisplayText.value);
+    }
+    if (relatedSteamAppId.present) {
+      map['app_id'] = Variable<int>(relatedSteamAppId.value);
+    }
+    if (richPresenceTokenText.present) {
+      map['rich_text'] = Variable<String>(richPresenceTokenText.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt.value);
+    }
+    if (deviceId.present) {
+      map['device_id'] = Variable<String>(deviceId.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SteamStatusHistoryRecordsCompanion(')
+          ..write('id: $id, ')
+          ..write('steamStatusDisplayText: $steamStatusDisplayText, ')
+          ..write('relatedSteamAppId: $relatedSteamAppId, ')
+          ..write('richPresenceTokenText: $richPresenceTokenText, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('deviceId: $deviceId, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -3162,6 +4266,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $PomodoroSettingsTable pomodoroSettings = $PomodoroSettingsTable(
     this,
   );
+  late final $SteamStatusPresetRecordsTable steamStatusPresetRecords =
+      $SteamStatusPresetRecordsTable(this);
+  late final $SteamStatusHistoryRecordsTable steamStatusHistoryRecords =
+      $SteamStatusHistoryRecordsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3174,6 +4282,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     countdownEvents,
     pomodoroSessions,
     pomodoroSettings,
+    steamStatusPresetRecords,
+    steamStatusHistoryRecords,
   ];
 }
 
@@ -4819,6 +5929,570 @@ typedef $$PomodoroSettingsTableProcessedTableManager =
       PomodoroSetting,
       PrefetchHooks Function()
     >;
+typedef $$SteamStatusPresetRecordsTableCreateCompanionBuilder =
+    SteamStatusPresetRecordsCompanion Function({
+      required String id,
+      required String steamStatusDisplayText,
+      Value<int?> relatedSteamAppId,
+      Value<String?> richPresenceTokenText,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<DateTime?> deletedAt,
+      required String deviceId,
+      Value<int> rowid,
+    });
+typedef $$SteamStatusPresetRecordsTableUpdateCompanionBuilder =
+    SteamStatusPresetRecordsCompanion Function({
+      Value<String> id,
+      Value<String> steamStatusDisplayText,
+      Value<int?> relatedSteamAppId,
+      Value<String?> richPresenceTokenText,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<String> deviceId,
+      Value<int> rowid,
+    });
+
+class $$SteamStatusPresetRecordsTableFilterComposer
+    extends Composer<_$AppDatabase, $SteamStatusPresetRecordsTable> {
+  $$SteamStatusPresetRecordsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get steamStatusDisplayText => $composableBuilder(
+    column: $table.steamStatusDisplayText,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get relatedSteamAppId => $composableBuilder(
+    column: $table.relatedSteamAppId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get richPresenceTokenText => $composableBuilder(
+    column: $table.richPresenceTokenText,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SteamStatusPresetRecordsTableOrderingComposer
+    extends Composer<_$AppDatabase, $SteamStatusPresetRecordsTable> {
+  $$SteamStatusPresetRecordsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get steamStatusDisplayText => $composableBuilder(
+    column: $table.steamStatusDisplayText,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get relatedSteamAppId => $composableBuilder(
+    column: $table.relatedSteamAppId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get richPresenceTokenText => $composableBuilder(
+    column: $table.richPresenceTokenText,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SteamStatusPresetRecordsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $SteamStatusPresetRecordsTable> {
+  $$SteamStatusPresetRecordsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get steamStatusDisplayText => $composableBuilder(
+    column: $table.steamStatusDisplayText,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get relatedSteamAppId => $composableBuilder(
+    column: $table.relatedSteamAppId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get richPresenceTokenText => $composableBuilder(
+    column: $table.richPresenceTokenText,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get deviceId =>
+      $composableBuilder(column: $table.deviceId, builder: (column) => column);
+}
+
+class $$SteamStatusPresetRecordsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $SteamStatusPresetRecordsTable,
+          SteamStatusPresetRecord,
+          $$SteamStatusPresetRecordsTableFilterComposer,
+          $$SteamStatusPresetRecordsTableOrderingComposer,
+          $$SteamStatusPresetRecordsTableAnnotationComposer,
+          $$SteamStatusPresetRecordsTableCreateCompanionBuilder,
+          $$SteamStatusPresetRecordsTableUpdateCompanionBuilder,
+          (
+            SteamStatusPresetRecord,
+            BaseReferences<
+              _$AppDatabase,
+              $SteamStatusPresetRecordsTable,
+              SteamStatusPresetRecord
+            >,
+          ),
+          SteamStatusPresetRecord,
+          PrefetchHooks Function()
+        > {
+  $$SteamStatusPresetRecordsTableTableManager(
+    _$AppDatabase db,
+    $SteamStatusPresetRecordsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SteamStatusPresetRecordsTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$SteamStatusPresetRecordsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$SteamStatusPresetRecordsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> steamStatusDisplayText = const Value.absent(),
+                Value<int?> relatedSteamAppId = const Value.absent(),
+                Value<String?> richPresenceTokenText = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
+                Value<String> deviceId = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SteamStatusPresetRecordsCompanion(
+                id: id,
+                steamStatusDisplayText: steamStatusDisplayText,
+                relatedSteamAppId: relatedSteamAppId,
+                richPresenceTokenText: richPresenceTokenText,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                deviceId: deviceId,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String steamStatusDisplayText,
+                Value<int?> relatedSteamAppId = const Value.absent(),
+                Value<String?> richPresenceTokenText = const Value.absent(),
+                required DateTime createdAt,
+                required DateTime updatedAt,
+                Value<DateTime?> deletedAt = const Value.absent(),
+                required String deviceId,
+                Value<int> rowid = const Value.absent(),
+              }) => SteamStatusPresetRecordsCompanion.insert(
+                id: id,
+                steamStatusDisplayText: steamStatusDisplayText,
+                relatedSteamAppId: relatedSteamAppId,
+                richPresenceTokenText: richPresenceTokenText,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                deviceId: deviceId,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SteamStatusPresetRecordsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $SteamStatusPresetRecordsTable,
+      SteamStatusPresetRecord,
+      $$SteamStatusPresetRecordsTableFilterComposer,
+      $$SteamStatusPresetRecordsTableOrderingComposer,
+      $$SteamStatusPresetRecordsTableAnnotationComposer,
+      $$SteamStatusPresetRecordsTableCreateCompanionBuilder,
+      $$SteamStatusPresetRecordsTableUpdateCompanionBuilder,
+      (
+        SteamStatusPresetRecord,
+        BaseReferences<
+          _$AppDatabase,
+          $SteamStatusPresetRecordsTable,
+          SteamStatusPresetRecord
+        >,
+      ),
+      SteamStatusPresetRecord,
+      PrefetchHooks Function()
+    >;
+typedef $$SteamStatusHistoryRecordsTableCreateCompanionBuilder =
+    SteamStatusHistoryRecordsCompanion Function({
+      required String id,
+      required String steamStatusDisplayText,
+      Value<int?> relatedSteamAppId,
+      Value<String?> richPresenceTokenText,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<DateTime?> deletedAt,
+      required String deviceId,
+      Value<int> rowid,
+    });
+typedef $$SteamStatusHistoryRecordsTableUpdateCompanionBuilder =
+    SteamStatusHistoryRecordsCompanion Function({
+      Value<String> id,
+      Value<String> steamStatusDisplayText,
+      Value<int?> relatedSteamAppId,
+      Value<String?> richPresenceTokenText,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<String> deviceId,
+      Value<int> rowid,
+    });
+
+class $$SteamStatusHistoryRecordsTableFilterComposer
+    extends Composer<_$AppDatabase, $SteamStatusHistoryRecordsTable> {
+  $$SteamStatusHistoryRecordsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get steamStatusDisplayText => $composableBuilder(
+    column: $table.steamStatusDisplayText,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get relatedSteamAppId => $composableBuilder(
+    column: $table.relatedSteamAppId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get richPresenceTokenText => $composableBuilder(
+    column: $table.richPresenceTokenText,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SteamStatusHistoryRecordsTableOrderingComposer
+    extends Composer<_$AppDatabase, $SteamStatusHistoryRecordsTable> {
+  $$SteamStatusHistoryRecordsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get steamStatusDisplayText => $composableBuilder(
+    column: $table.steamStatusDisplayText,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get relatedSteamAppId => $composableBuilder(
+    column: $table.relatedSteamAppId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get richPresenceTokenText => $composableBuilder(
+    column: $table.richPresenceTokenText,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SteamStatusHistoryRecordsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $SteamStatusHistoryRecordsTable> {
+  $$SteamStatusHistoryRecordsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get steamStatusDisplayText => $composableBuilder(
+    column: $table.steamStatusDisplayText,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get relatedSteamAppId => $composableBuilder(
+    column: $table.relatedSteamAppId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get richPresenceTokenText => $composableBuilder(
+    column: $table.richPresenceTokenText,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get deviceId =>
+      $composableBuilder(column: $table.deviceId, builder: (column) => column);
+}
+
+class $$SteamStatusHistoryRecordsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $SteamStatusHistoryRecordsTable,
+          SteamStatusHistoryRecord,
+          $$SteamStatusHistoryRecordsTableFilterComposer,
+          $$SteamStatusHistoryRecordsTableOrderingComposer,
+          $$SteamStatusHistoryRecordsTableAnnotationComposer,
+          $$SteamStatusHistoryRecordsTableCreateCompanionBuilder,
+          $$SteamStatusHistoryRecordsTableUpdateCompanionBuilder,
+          (
+            SteamStatusHistoryRecord,
+            BaseReferences<
+              _$AppDatabase,
+              $SteamStatusHistoryRecordsTable,
+              SteamStatusHistoryRecord
+            >,
+          ),
+          SteamStatusHistoryRecord,
+          PrefetchHooks Function()
+        > {
+  $$SteamStatusHistoryRecordsTableTableManager(
+    _$AppDatabase db,
+    $SteamStatusHistoryRecordsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SteamStatusHistoryRecordsTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$SteamStatusHistoryRecordsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$SteamStatusHistoryRecordsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> steamStatusDisplayText = const Value.absent(),
+                Value<int?> relatedSteamAppId = const Value.absent(),
+                Value<String?> richPresenceTokenText = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
+                Value<String> deviceId = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SteamStatusHistoryRecordsCompanion(
+                id: id,
+                steamStatusDisplayText: steamStatusDisplayText,
+                relatedSteamAppId: relatedSteamAppId,
+                richPresenceTokenText: richPresenceTokenText,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                deviceId: deviceId,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String steamStatusDisplayText,
+                Value<int?> relatedSteamAppId = const Value.absent(),
+                Value<String?> richPresenceTokenText = const Value.absent(),
+                required DateTime createdAt,
+                required DateTime updatedAt,
+                Value<DateTime?> deletedAt = const Value.absent(),
+                required String deviceId,
+                Value<int> rowid = const Value.absent(),
+              }) => SteamStatusHistoryRecordsCompanion.insert(
+                id: id,
+                steamStatusDisplayText: steamStatusDisplayText,
+                relatedSteamAppId: relatedSteamAppId,
+                richPresenceTokenText: richPresenceTokenText,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                deviceId: deviceId,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SteamStatusHistoryRecordsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $SteamStatusHistoryRecordsTable,
+      SteamStatusHistoryRecord,
+      $$SteamStatusHistoryRecordsTableFilterComposer,
+      $$SteamStatusHistoryRecordsTableOrderingComposer,
+      $$SteamStatusHistoryRecordsTableAnnotationComposer,
+      $$SteamStatusHistoryRecordsTableCreateCompanionBuilder,
+      $$SteamStatusHistoryRecordsTableUpdateCompanionBuilder,
+      (
+        SteamStatusHistoryRecord,
+        BaseReferences<
+          _$AppDatabase,
+          $SteamStatusHistoryRecordsTable,
+          SteamStatusHistoryRecord
+        >,
+      ),
+      SteamStatusHistoryRecord,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -4837,4 +6511,14 @@ class $AppDatabaseManager {
       $$PomodoroSessionsTableTableManager(_db, _db.pomodoroSessions);
   $$PomodoroSettingsTableTableManager get pomodoroSettings =>
       $$PomodoroSettingsTableTableManager(_db, _db.pomodoroSettings);
+  $$SteamStatusPresetRecordsTableTableManager get steamStatusPresetRecords =>
+      $$SteamStatusPresetRecordsTableTableManager(
+        _db,
+        _db.steamStatusPresetRecords,
+      );
+  $$SteamStatusHistoryRecordsTableTableManager get steamStatusHistoryRecords =>
+      $$SteamStatusHistoryRecordsTableTableManager(
+        _db,
+        _db.steamStatusHistoryRecords,
+      );
 }

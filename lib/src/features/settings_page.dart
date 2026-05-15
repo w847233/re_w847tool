@@ -277,6 +277,10 @@ class _AboutPanel extends StatelessWidget {
               _InfoRow(label: '路由', value: 'go_router'),
               _InfoRow(label: '本地数据库', value: 'Drift + SQLite'),
               _InfoRow(label: '本地路径', value: 'path_provider'),
+              _InfoRow(
+                label: 'Steam 状态后端',
+                value: '内置 Python 侧车（statushack 重构集成）',
+              ),
               _InfoRow(label: '同步协议', value: 'WebDAV'),
               _InfoRow(label: '加密', value: 'AES-256-GCM + PBKDF2-HMAC-SHA256'),
               _InfoRow(label: '字体', value: 'HarmonyOS Sans SC'),
@@ -310,7 +314,7 @@ class _AboutPanel extends StatelessWidget {
         const AppPanel(
           title: '数据与同步',
           child: Text(
-            'WebDAV 同步使用 personal-toolbox/state.v1.enc.json 文件。同步数据在本地加密后上传，冲突默认按最后写入时间处理。',
+            'WebDAV 同步使用 personal-toolbox/state.v1.enc.json 文件。同步数据在本地加密后上传，冲突默认按最后写入时间处理。Steam 状态工具中的预设与历史会参与同步，但账号凭证仅保存在本机。',
             style: TextStyle(color: AppColors.muted),
           ),
         ),

@@ -39,6 +39,16 @@ void main() {
       targetDate: DateTime.utc(2026, 6, 1),
     );
     await source.addPomodoroSession(minutes: 25);
+    await source.saveSteamStatusPreset(
+      text: '在摸鱼 🐟',
+      appId: 730,
+      richText: '#status_online',
+    );
+    await source.addSteamStatusHistory(
+      text: '认真工作中',
+      appId: 570,
+      richText: '#status_busy',
+    );
 
     final snapshot = await source.exportPlainSnapshot();
     await target.importPlainSnapshot(snapshot);
@@ -50,6 +60,20 @@ void main() {
     expect(await target.watchActiveLedgerEntries().first, hasLength(1));
     expect(await target.watchActiveCountdownEvents().first, hasLength(1));
     expect(await target.watchPomodoroSessions().first, hasLength(1));
+    expect(await target.watchSteamStatusPresets().first, hasLength(1));
+    expect(await target.watchSteamStatusHistoryEntries().first, hasLength(1));
+    expect(
+      (await target.watchSteamStatusPresets().first)
+          .single
+          .steamStatusDisplayText,
+      '在摸鱼 🐟',
+    );
+    expect(
+      (await target.watchSteamStatusHistoryEntries().first)
+          .single
+          .richPresenceTokenText,
+      '#status_busy',
+    );
   });
 
   test('快照导入按更新时间保留较新的设置', () async {

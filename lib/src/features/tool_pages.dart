@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 
 import '../data/app_database.dart';
 import '../data/database_provider.dart';
+import '../steam_status/steam_status_tool.dart';
 import '../theme/app_theme.dart';
 import '../tools/tool_registry.dart';
 import '../ui/app_panel.dart';
@@ -35,6 +36,7 @@ class ToolPage extends StatelessWidget {
                 'converter' => const ConverterTool(),
                 'password' => const PasswordTool(),
                 'pomodoro' => const PomodoroTool(),
+                'steamStatus' => const SteamStatusTool(),
                 _ => EmptyState(
                   icon: tool.icon,
                   title: '工具暂不可用',
@@ -121,6 +123,7 @@ class NotesTool extends ConsumerStatefulWidget {
 class _NotesToolState extends ConsumerState<NotesTool> {
   final _titleController = TextEditingController();
   final _contentController = TextEditingController();
+  Note? _editingNote;
 
   @override
   void dispose() {
@@ -132,9 +135,10 @@ class _NotesToolState extends ConsumerState<NotesTool> {
   @override
   Widget build(BuildContext context) {
     final database = ref.watch(appDatabaseProvider);
+    final isEditing = _editingNote != null;
     return _ResponsiveGrid(
       left: AppPanel(
-        title: '新增便签',
+        title: isEditing ? '修改便签' : '新增便签',
         child: Column(
           children: [
             TextField(
@@ -151,17 +155,23 @@ class _NotesToolState extends ConsumerState<NotesTool> {
             const SizedBox(height: 12),
             Align(
               alignment: Alignment.centerRight,
-              child: FilledButton.icon(
-                onPressed: () async {
-                  await database.addNote(
-                    title: _titleController.text,
-                    content: _contentController.text,
-                  );
-                  _titleController.clear();
-                  _contentController.clear();
-                },
-                icon: const Icon(Icons.add),
-                label: const Text('保存便签'),
+              child: Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  if (isEditing)
+                    OutlinedButton.icon(
+                      onPressed: _resetEditing,
+                      icon: const Icon(Icons.close),
+                      label: const Text('取消编辑'),
+                    ),
+                  FilledButton.icon(
+                    onPressed: () => _saveNote(database),
+                    icon: Icon(isEditing ? Icons.check : Icons.add),
+                    label: Text(isEditing ? '更新便签' : '保存便签'),
+                  ),
+                ],
               ),
             ),
           ],
@@ -183,10 +193,20 @@ class _NotesToolState extends ConsumerState<NotesTool> {
               for (final note in notes) ...[
                 AppPanel(
                   title: note.title,
-                  trailing: IconButton(
-                    tooltip: '删除便签',
-                    onPressed: () => database.deleteNote(note.id),
-                    icon: const Icon(Icons.delete_outline),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: '编辑便签',
+                        onPressed: () => _startEditing(note),
+                        icon: const Icon(Icons.edit_outlined),
+                      ),
+                      IconButton(
+                        tooltip: '删除便签',
+                        onPressed: () => database.deleteNote(note.id),
+                        icon: const Icon(Icons.delete_outline),
+                      ),
+                    ],
                   ),
                   child: Text(note.content.isEmpty ? '无内容' : note.content),
                 ),
@@ -197,6 +217,39 @@ class _NotesToolState extends ConsumerState<NotesTool> {
         },
       ),
     );
+  }
+
+  void _startEditing(Note note) {
+    setState(() {
+      _editingNote = note;
+      _titleController.text = note.title;
+      _contentController.text = note.content;
+    });
+  }
+
+  void _resetEditing() {
+    setState(() {
+      _editingNote = null;
+      _titleController.clear();
+      _contentController.clear();
+    });
+  }
+
+  Future<void> _saveNote(AppDatabase database) async {
+    final editingNote = _editingNote;
+    if (editingNote == null) {
+      await database.addNote(
+        title: _titleController.text,
+        content: _contentController.text,
+      );
+    } else {
+      await database.updateNote(
+        editingNote.id,
+        title: _titleController.text,
+        content: _contentController.text,
+      );
+    }
+    _resetEditing();
   }
 }
 

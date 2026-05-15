@@ -33,6 +33,19 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Flutter 各平台的临时生成目录
+android/.gradle/
+android/local.properties
+ios/Flutter/ephemeral/
+linux/flutter/ephemeral/
+macos/Flutter/ephemeral/
+windows/flutter/ephemeral/
+
+# 常见编辑器和本地环境文件
+.vscode/
+*.tmp
+*.bak
+
 # Symbolication related
 app.*.symbols
 

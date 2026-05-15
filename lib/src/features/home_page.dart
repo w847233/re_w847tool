@@ -154,6 +154,11 @@ class _WelcomePanel extends StatelessWidget {
                 icon: const Icon(Icons.cloud_sync_outlined),
                 label: const Text('查看同步说明'),
               ),
+              OutlinedButton.icon(
+                onPressed: () => context.go('/tools/steamStatus'),
+                icon: const Icon(Icons.sports_esports_outlined),
+                label: const Text('Steam 状态'),
+              ),
             ],
           ),
         ],
@@ -703,6 +708,11 @@ class _QuickActionsWidget extends StatelessWidget {
           label: '番茄钟',
           icon: Icons.timer_outlined,
           route: '/tools/pomodoro',
+        ),
+        _QuickAction(
+          label: 'Steam',
+          icon: Icons.sports_esports_outlined,
+          route: '/tools/steamStatus',
         ),
       ],
     );
