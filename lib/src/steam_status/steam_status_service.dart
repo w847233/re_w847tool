@@ -227,6 +227,7 @@ class SteamStatusController {
     int? appId,
     required bool noisy,
     String? richText,
+    Map<String, String>? richPresenceValues,
   }) async {
     final normalizedText = text.trim();
     final normalizedRichText = _normalizeOptional(richText);
@@ -246,6 +247,7 @@ class SteamStatusController {
         'app_id': appId,
         'noisy': noisy,
         'rich_text': normalizedRichText,
+        'rich_presence_values': richPresenceValues,
       },
       successMessage: normalizedRichText == null
           ? '状态已提交'
@@ -309,6 +311,9 @@ class SteamStatusController {
           (item) => SteamRichPresenceToken(
             token: item['token'] as String? ?? '',
             display: item['display'] as String? ?? '',
+            placeholders:
+                (item['placeholders'] as List?)?.whereType<String>().toList() ??
+                const <String>[],
           ),
         )
         .where((item) => item.token.isNotEmpty)

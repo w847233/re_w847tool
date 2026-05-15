@@ -286,11 +286,15 @@ void main() {
     await tester.tap(find.text('Steam 状态').first);
     await _pumpUi(tester);
 
-    await tester.tap(find.text('离开').first);
+    final awayChip = find.widgetWithText(ChoiceChip, '离开');
+    final busyChip = find.widgetWithText(ChoiceChip, '忙碌');
+    await tester.ensureVisible(awayChip);
+    await tester.tap(awayChip);
     await tester.pump();
     expect(find.text('副状态已切换为离开'), findsOneWidget);
 
-    await tester.tap(find.text('忙碌').first);
+    await tester.ensureVisible(busyChip);
+    await tester.tap(busyChip);
     await tester.pump();
 
     expect(find.text('副状态已切换为离开'), findsNothing);
@@ -366,13 +370,13 @@ class _FakeSteamStatusController extends SteamStatusController {
   @override
   Future<SteamActionResult> setPersonaState(int state) async {
     final label = switch (state) {
-      0 => '离线',
       1 => '在线',
       2 => '忙碌',
       3 => '离开',
       4 => '打盹',
-      5 => '想交易',
-      6 => '想玩游戏',
+      5 => '找交易',
+      6 => '找伙伴',
+      7 => '隐身',
       _ => '未知',
     };
     return SteamActionResult(success: true, message: '副状态已切换为$label');

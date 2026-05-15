@@ -285,6 +285,17 @@ class _SteamStatusToolState extends ConsumerState<SteamStatusTool> {
               _richTextController.text = token?.token ?? '';
             },
             onSubmit: () async {
+              final selectedToken = _selectedToken;
+              final richText = _richTextController.text.trim();
+              final richPresenceValues =
+                  selectedToken == null ||
+                      !_useRichPresence ||
+                      selectedToken.token != richText
+                  ? null
+                  : {
+                      for (final key in selectedToken.placeholders)
+                        key: _statusController.text.trim(),
+                    };
               await _showResult(
                 await controller.setStatus(
                   text: _statusController.text,
@@ -292,7 +303,8 @@ class _SteamStatusToolState extends ConsumerState<SteamStatusTool> {
                       ? int.tryParse(_appIdController.text.trim())
                       : null,
                   noisy: _noisyMode,
-                  richText: _useRichPresence ? _richTextController.text : null,
+                  richText: _useRichPresence ? richText : null,
+                  richPresenceValues: richPresenceValues,
                 ),
               );
             },
@@ -1327,7 +1339,7 @@ class _StatusEditorPanel extends StatelessWidget {
                   label: Text(loadingRpTokens ? '获取中...' : '从 AppID 获取 Tokens'),
                 ),
                 const Text(
-                  '获取到的展示文本仅供参考，实际发送的是 Token Key。',
+                  'Token 所需占位符会用状态文字自动填充。',
                   style: TextStyle(color: AppColors.muted),
                 ),
               ],
@@ -1341,7 +1353,12 @@ class _StatusEditorPanel extends StatelessWidget {
                   for (final token in rpTokens)
                     DropdownMenuItem(
                       value: token,
-                      child: Text('${token.token} -> ${token.display}'),
+                      child: Text(
+                        token.placeholders.isEmpty
+                            ? '${token.token} -> ${token.display}'
+                            : '${token.token} -> ${token.display} '
+                                  '(${token.placeholders.join(', ')})',
+                      ),
                     ),
                 ],
                 onChanged: onSelectToken,

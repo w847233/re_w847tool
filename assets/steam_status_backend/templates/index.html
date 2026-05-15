@@ -675,12 +675,28 @@
       if (rich_text && !app_id) {
         showToast("⚠️ Rich Presence 在未关联真实游戏 AppID 时可能对好友不可见，建议同时填写 AppID。", "warn");
       }
+      const selectedToken = document.getElementById("rpTokensSelect")?.selectedOptions?.[0];
+      const rich_presence_values = {};
+      if (selectedToken && selectedToken.value === rich_text) {
+        (selectedToken.dataset.placeholders || "")
+          .split(",")
+          .filter(Boolean)
+          .forEach(key => { rich_presence_values[key] = text; });
+      }
 
       try {
         const res = await fetch("/api/status", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text, app_id, noisy: noisyMode, rich_text: rich_text || null }),
+          body: JSON.stringify({
+            text,
+            app_id,
+            noisy: noisyMode,
+            rich_text: rich_text || null,
+            rich_presence_values: Object.keys(rich_presence_values).length
+              ? rich_presence_values
+              : null,
+          }),
         });
         const data = await res.json();
         if (data.success) {
@@ -900,7 +916,11 @@
           const opt = document.createElement("option");
           opt.value = t.token;
           opt.dataset.display = t.display;
-          opt.textContent = `${t.token}  →  ${t.display}`;
+          opt.dataset.placeholders = (t.placeholders || []).join(",");
+          const placeholderHint = t.placeholders?.length
+            ? `  ·  占位符：${t.placeholders.join(", ")}`
+            : "";
+          opt.textContent = `${t.token}  →  ${t.display}${placeholderHint}`;
           select.appendChild(opt);
         });
 
@@ -931,9 +951,15 @@
       // 将所选 token key（以 # 开头）填入文本输入框
       input.value = selected.value;
 
-      // 显示对应的展示字符串预览（仅供参考，实际发送的是 token key）
+      // 显示对应的展示字符串预览，后端会自动补齐 token 需要的占位符
       const displayStr = selected.dataset.display || "";
-      preview.innerHTML = `<span style="color:var(--color-accent);font-weight:600;">将发送 Token：</span>${escapeHtml(selected.value)}<br><span style="color:var(--text-muted)">好友看到的效果：${escapeHtml(displayStr)}</span>`;
+      const placeholders = (selected.dataset.placeholders || "")
+        .split(",")
+        .filter(Boolean);
+      const placeholderText = placeholders.length
+        ? `<br><span style="color:var(--text-muted)">占位符 ${escapeHtml(placeholders.join(", "))} 会用上方状态文字自动填充</span>`
+        : "";
+      preview.innerHTML = `<span style="color:var(--color-accent);font-weight:600;">将发送 Token：</span>${escapeHtml(selected.value)}<br><span style="color:var(--text-muted)">好友看到的效果：${escapeHtml(displayStr)}</span>${placeholderText}`;
       preview.style.display = "block";
     }
 

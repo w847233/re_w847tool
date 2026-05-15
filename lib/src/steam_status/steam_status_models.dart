@@ -69,10 +69,15 @@ class SteamRemoteState {
 }
 
 class SteamRichPresenceToken {
-  const SteamRichPresenceToken({required this.token, required this.display});
+  const SteamRichPresenceToken({
+    required this.token,
+    required this.display,
+    this.placeholders = const <String>[],
+  });
 
   final String token;
   final String display;
+  final List<String> placeholders;
 }
 
 class SteamAccount {

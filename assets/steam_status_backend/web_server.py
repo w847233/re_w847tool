@@ -23,9 +23,24 @@ REST API 端点：
 """
 
 import logging
+import re
 from flask import Flask, jsonify, render_template, request
 
 logger = logging.getLogger(__name__)
+
+RICH_PRESENCE_PLACEHOLDER_RE = re.compile(r"%([A-Za-z0-9_:]+)%")
+
+
+def _extract_rich_presence_placeholders(display_text: str) -> list[str]:
+    """从 localization 展示串里提取 %key% 占位符，保持出现顺序。"""
+    placeholders: list[str] = []
+    seen = set()
+    for match in RICH_PRESENCE_PLACEHOLDER_RE.finditer(display_text or ""):
+        key = match.group(1)
+        if key not in seen:
+            placeholders.append(key)
+            seen.add(key)
+    return placeholders
 
 
 def _fetch_rich_presence_tokens(steam_client, app_id: int, language: str = "english") -> list[dict]:
@@ -35,7 +50,8 @@ def _fetch_rich_presence_tokens(steam_client, app_id: int, language: str = "engl
     使用 Community.GetAppRichPresenceLocalization#1 接口，而非 PICS/appinfo，
     因为 Rich Presence localization 数据不存储在 appinfo 中。
 
-    返回格式：[{"token": "#Status_Playing", "display": "Playing on %map%"}, ...]
+    返回格式：
+    [{"token": "#Status_Playing", "display": "Playing on %map%", "placeholders": ["map"]}, ...]
     其中 display 为对应语言的展示字符串（含变量占位符的原始格式）。
 
     Args:
@@ -80,7 +96,11 @@ def _fetch_rich_presence_tokens(steam_client, app_id: int, language: str = "engl
     )
 
     tokens = [
-        {"token": t.name, "display": t.value}
+        {
+            "token": t.name,
+            "display": t.value,
+            "placeholders": _extract_rich_presence_placeholders(t.value),
+        }
         for t in lang_data.tokens
         if t.name and isinstance(t.value, str)
     ]
@@ -88,6 +108,34 @@ def _fetch_rich_presence_tokens(steam_client, app_id: int, language: str = "engl
     # 按 token key 排序，方便用户查找
     tokens.sort(key=lambda t: t["token"])
     return tokens
+
+
+def _resolve_rich_presence_values(
+    steam_client,
+    app_id: int | None,
+    rich_text: str | None,
+    status_text: str,
+    language: str = "english",
+) -> dict[str, str]:
+    """根据 token localization 自动补齐 Rich Presence 占位符 KV。"""
+    if not app_id or not rich_text or not status_text:
+        return {}
+
+    tokens = _fetch_rich_presence_tokens(steam_client, app_id, language)
+    token = next((item for item in tokens if item["token"] == rich_text), None)
+    if token is None:
+        logger.warning("未找到 Rich Presence token：appid=%s token=%s", app_id, rich_text)
+        return {}
+
+    placeholders = token.get("placeholders") or []
+    values = {key: status_text for key in placeholders if key != "steam_display"}
+    if values:
+        logger.info(
+            "Rich Presence token %s 需要占位符 %s，已使用状态文字自动填充",
+            rich_text,
+            ", ".join(values.keys()),
+        )
+    return values
 
 
 def create_app(bot) -> Flask:
@@ -257,8 +305,7 @@ def create_app(bot) -> Flask:
     def get_rich_presence_tokens():
         """
         获取指定 AppID 的 Rich Presence localization tokens。
-        通过 Steam PICS 协议（get_product_info）获取 appinfo，
-        解析其中的 localization.richpresence 结构。
+        通过 Steam Unified Messages 获取 Community 配置里的 Rich Presence localization。
 
         Query params:
             app_id: 游戏的 AppID（整数）
@@ -471,8 +518,32 @@ def create_app(bot) -> Flask:
         app_id = int(app_id_raw) if app_id_raw not in (None, "", 0) else None
         noisy = bool(data.get("noisy", False))
         rich_text = (data.get("rich_text") or "").strip() or None
+        language = (data.get("language") or "english").strip() or "english"
+        raw_rp_values = data.get("rich_presence_values")
+        rich_presence_values = (
+            raw_rp_values
+            if isinstance(raw_rp_values, dict)
+            else {}
+        )
+        if rich_text and app_id and not rich_presence_values:
+            try:
+                rich_presence_values = _resolve_rich_presence_values(
+                    bot.client,
+                    app_id,
+                    rich_text,
+                    status_text,
+                    language,
+                )
+            except Exception as e:
+                logger.warning("解析 Rich Presence 占位符失败 (appid=%s token=%s): %s", app_id, rich_text, e)
 
-        ok = bot.set_status(status_text, app_id, noisy, rich_text=rich_text)
+        ok = bot.set_status(
+            status_text,
+            app_id,
+            noisy,
+            rich_text=rich_text,
+            rich_presence_values=rich_presence_values,
+        )
         if not ok:
             return jsonify({"success": False, "error": "未登录，请先登录 Steam"}), 403
         return jsonify({
@@ -481,6 +552,7 @@ def create_app(bot) -> Flask:
             "app_id": app_id,
             "noisy": noisy,
             "rich_text": rich_text,
+            "rich_presence_placeholders": list(rich_presence_values.keys()),
         })
 
     @app.route("/api/status", methods=["DELETE"])

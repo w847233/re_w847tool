@@ -1022,6 +1022,7 @@ class SteamBot:
         self._current_status: str | None = None
         self._current_app_id: int | None = None
         self._current_rich_text: str | None = None
+        self._current_rich_presence_values: dict[str, str] = {}
         self._current_persona_state: EPersonaState = EPersonaState.Online
         self._current_persona_state_flags: int = 0
 
@@ -1178,7 +1179,8 @@ class SteamBot:
                         self._current_status or "",
                         self._current_app_id,
                         noisy=False,
-                        rich_text=self._current_rich_text
+                        rich_text=self._current_rich_text,
+                        rich_presence_values=dict(self._current_rich_presence_values),
                     )
                 
                 # 通知前端刷新显示
@@ -1217,7 +1219,12 @@ class SteamBot:
                 rp_status = self._current_status if use_rp_status else ""
                 try:
                     self.client.send(_build_rich_presence_msg(
-                        self._current_rich_text, friend_ids, status_text=rp_status))
+                        self._current_rich_text,
+                        friend_ids,
+                        self._current_app_id,
+                        status_text=rp_status,
+                        rich_presence_values=self._current_rich_presence_values,
+                    ))
                     logger.debug("RP 保活：已重新广播 Rich Presence（%s）", self._current_rich_text)
                 except Exception as e:
                     logger.warning("RP 保活重发异常：%s", e)
@@ -1484,6 +1491,7 @@ class SteamBot:
         app_id: int | None = None,
         noisy: bool = False,
         rich_text: str | None = None,
+        rich_presence_values: dict[str, str] | None = None,
     ) -> bool:
         if not self._logged_in:
             logger.warning("未登录，无法设置状态")
@@ -1511,6 +1519,15 @@ class SteamBot:
         self._current_status = status_text
         self._current_app_id = app_id
         self._current_rich_text = rich_text or None
+        self._current_rich_presence_values = (
+            _sanitize_rich_presence_values(rich_presence_values)
+            if self._current_rich_text
+            else {}
+        )
+        if self._current_rich_text:
+            self._current_persona_state_flags |= RICH_PRESENCE_PERSONA_FLAG
+        else:
+            self._current_persona_state_flags &= ~RICH_PRESENCE_PERSONA_FLAG
 
         self._on_status_change("status_updated", {
             "status": status_text,
@@ -1525,7 +1542,7 @@ class SteamBot:
             def noisy_task():
                 self.set_persona_state(EPersonaState.Invisible)
                 self.client.send(MsgProto(EMsg.ClientGamesPlayed))
-                self.client.send(_build_clear_rich_presence_msg(friend_ids))
+                self.client.send(_build_clear_rich_presence_msg(friend_ids, self._current_app_id))
                 gevent.sleep(5.5)
                 self.client.send(msg)
                 if self._current_rich_text:
@@ -1533,7 +1550,12 @@ class SteamBot:
                         logger.warning("好友列表为空，Rich Presence 无法推送（noisy 模式）")
                     else:
                         self.client.send(_build_rich_presence_msg(
-                            self._current_rich_text, friend_ids, status_text=rp_status))
+                            self._current_rich_text,
+                            friend_ids,
+                            self._current_app_id,
+                            status_text=rp_status,
+                            rich_presence_values=self._current_rich_presence_values,
+                        ))
                         self._start_rp_keepalive()
                 self.set_persona_state(EPersonaState.Online)
             gevent.spawn(noisy_task)
@@ -1552,7 +1574,12 @@ class SteamBot:
                     # 短暂等待，确保 CM 先处理 ClientGamesPlayed，再关联 RP
                     gevent.sleep(0.3)
                     self.client.send(_build_rich_presence_msg(
-                        rich_text, friend_ids, status_text=rp_status))
+                        rich_text,
+                        friend_ids,
+                        app_id,
+                        status_text=rp_status,
+                        rich_presence_values=self._current_rich_presence_values,
+                    ))
                     # 发完 RP 后再次广播 PersonaState，触发好友端刷新 Rich Presence 显示
                     gevent.sleep(0.1)
                     self.client.change_status(
@@ -1572,11 +1599,13 @@ class SteamBot:
         if not self._logged_in: return False
         friend_ids = self._get_friend_steamids()
         self.client.send(MsgProto(EMsg.ClientGamesPlayed))
-        self.client.send(_build_clear_rich_presence_msg(friend_ids))
+        self.client.send(_build_clear_rich_presence_msg(friend_ids, self._current_app_id))
         self._stop_rp_keepalive()  # 清除状态时停止 RP 保活
         self._current_status = None
         self._current_app_id = None
         self._current_rich_text = None
+        self._current_rich_presence_values = {}
+        self._current_persona_state_flags &= ~RICH_PRESENCE_PERSONA_FLAG
         self._on_status_change("status_cleared", {})
         return True
 
@@ -1597,6 +1626,8 @@ class SteamBot:
 
     def set_persona_state_flags(self, flags: int) -> bool:
         if not self._logged_in: return False
+        if self._current_rich_text:
+            flags |= RICH_PRESENCE_PERSONA_FLAG
         if flags < 0 or flags & ~ALLOWED_PERSONA_STATE_FLAGS:
             logger.warning("拒绝无效 Persona State Flags：%s", flags)
             return False
