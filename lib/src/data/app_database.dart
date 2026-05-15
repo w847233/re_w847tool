@@ -343,6 +343,40 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
+  Future<bool> importLedgerEntry({
+    required String sourceId,
+    required String type,
+    required double amount,
+    required String note,
+    required DateTime occurredAt,
+  }) async {
+    final normalizedSourceId = sourceId.trim();
+    if (normalizedSourceId.isEmpty || amount <= 0) {
+      return false;
+    }
+    final existing = await (select(
+      ledgerEntries,
+    )..where((row) => row.id.equals(normalizedSourceId))).getSingleOrNull();
+    if (existing != null) {
+      return false;
+    }
+    final now = DateTime.now().toUtc();
+    await into(ledgerEntries).insert(
+      LedgerEntry(
+        id: normalizedSourceId,
+        type: type,
+        amount: amount,
+        note: note.trim(),
+        occurredAt: occurredAt.toUtc(),
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+        deviceId: await ensureDeviceId(),
+      ),
+    );
+    return true;
+  }
+
   Future<void> deleteLedgerEntry(String id) async {
     final existing = await (select(
       ledgerEntries,

@@ -17,6 +17,7 @@ class SteamRemoteState {
     this.currentStatus,
     this.currentAppId,
     this.currentRichText,
+    this.currentRichPresenceStatus,
   });
 
   final bool loggedIn;
@@ -24,6 +25,7 @@ class SteamRemoteState {
   final String? currentStatus;
   final int? currentAppId;
   final String? currentRichText;
+  final String? currentRichPresenceStatus;
   final int personaState;
   final String personaStateName;
   final int personaStateFlags;
@@ -41,6 +43,7 @@ class SteamRemoteState {
     String? currentStatus,
     int? currentAppId,
     String? currentRichText,
+    String? currentRichPresenceStatus,
     int? personaState,
     String? personaStateName,
     int? personaStateFlags,
@@ -48,6 +51,7 @@ class SteamRemoteState {
     bool clearCurrentStatus = false,
     bool clearCurrentAppId = false,
     bool clearCurrentRichText = false,
+    bool clearCurrentRichPresenceStatus = false,
   }) {
     return SteamRemoteState(
       loggedIn: loggedIn ?? this.loggedIn,
@@ -61,6 +65,9 @@ class SteamRemoteState {
       currentRichText: clearCurrentRichText
           ? null
           : (currentRichText ?? this.currentRichText),
+      currentRichPresenceStatus: clearCurrentRichPresenceStatus
+          ? null
+          : (currentRichPresenceStatus ?? this.currentRichPresenceStatus),
       personaState: personaState ?? this.personaState,
       personaStateName: personaStateName ?? this.personaStateName,
       personaStateFlags: personaStateFlags ?? this.personaStateFlags,

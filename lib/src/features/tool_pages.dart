@@ -8,10 +8,14 @@ import 'package:intl/intl.dart';
 
 import '../data/app_database.dart';
 import '../data/database_provider.dart';
+import '../ledger/alipay_bill_import_service.dart';
+import '../network/dns_leak_tool.dart';
+import '../network/nat_traversal_tool.dart';
 import '../steam_status/steam_status_tool.dart';
 import '../theme/app_theme.dart';
 import '../tools/tool_registry.dart';
 import '../ui/app_panel.dart';
+import '../ui/latest_snack_bar.dart';
 
 class ToolPage extends StatelessWidget {
   const ToolPage({super.key, required this.toolId});
@@ -36,6 +40,8 @@ class ToolPage extends StatelessWidget {
                 'converter' => const ConverterTool(),
                 'password' => const PasswordTool(),
                 'pomodoro' => const PomodoroTool(),
+                'dnsLeak' => const DnsLeakTool(),
+                'natTraversal' => const NatTraversalTool(),
                 'steamStatus' => const SteamStatusTool(),
                 _ => EmptyState(
                   icon: tool.icon,
@@ -356,12 +362,28 @@ class LedgerTool extends ConsumerStatefulWidget {
 class _LedgerToolState extends ConsumerState<LedgerTool> {
   final _amountController = TextEditingController();
   final _noteController = TextEditingController();
+  final _alipayAppIdController = TextEditingController();
+  final _alipayPrivateKeyController = TextEditingController();
+  final _alipayAppAuthTokenController = TextEditingController();
+  final _alipayBillTypeController = TextEditingController(text: 'trade');
+  final _alipayService = AlipayBillImportService();
+  DateTime _alipayBillDate = DateUtils.dateOnly(
+    DateTime.now().subtract(const Duration(days: 1)),
+  );
   String _type = '支出';
+  String _alipayImportType = '收入';
+  bool _isImportingAlipay = false;
+  String _alipayStatus = '支付宝接口只能获取商户离线账单，日账单最早为昨天。';
 
   @override
   void dispose() {
     _amountController.dispose();
     _noteController.dispose();
+    _alipayAppIdController.dispose();
+    _alipayPrivateKeyController.dispose();
+    _alipayAppAuthTokenController.dispose();
+    _alipayBillTypeController.dispose();
+    _alipayService.close();
     super.dispose();
   }
 
@@ -372,44 +394,111 @@ class _LedgerToolState extends ConsumerState<LedgerTool> {
       left: AppPanel(
         title: '新增账目',
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SegmentedButton<String>(
-              selected: {_type},
-              segments: const [
-                ButtonSegment(value: '支出', label: Text('支出')),
-                ButtonSegment(value: '收入', label: Text('收入')),
+            Column(
+              children: [
+                SegmentedButton<String>(
+                  selected: {_type},
+                  segments: const [
+                    ButtonSegment(value: '支出', label: Text('支出')),
+                    ButtonSegment(value: '收入', label: Text('收入')),
+                  ],
+                  onSelectionChanged: (value) =>
+                      setState(() => _type = value.first),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _amountController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: '金额'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _noteController,
+                  decoration: const InputDecoration(labelText: '备注'),
+                ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton.icon(
+                    onPressed: () async {
+                      await database.addLedgerEntry(
+                        type: _type,
+                        amount: double.tryParse(_amountController.text) ?? 0,
+                        note: _noteController.text,
+                      );
+                      _amountController.clear();
+                      _noteController.clear();
+                    },
+                    icon: const Icon(Icons.add),
+                    label: const Text('记一笔'),
+                  ),
+                ),
               ],
-              onSelectionChanged: (value) =>
-                  setState(() => _type = value.first),
+            ),
+            const Divider(height: 32),
+            Text('支付宝账单导入', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _alipayAppIdController,
+              decoration: const InputDecoration(labelText: 'App ID'),
             ),
             const SizedBox(height: 12),
             TextField(
-              controller: _amountController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: '金额'),
+              controller: _alipayPrivateKeyController,
+              minLines: 3,
+              maxLines: 5,
+              decoration: const InputDecoration(labelText: '应用私钥 PEM'),
             ),
             const SizedBox(height: 12),
             TextField(
-              controller: _noteController,
-              decoration: const InputDecoration(labelText: '备注'),
+              controller: _alipayAppAuthTokenController,
+              decoration: const InputDecoration(
+                labelText: 'App Auth Token（服务商代商户可选）',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _alipayBillTypeController,
+              decoration: const InputDecoration(labelText: '账单类型'),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _isImportingAlipay ? null : _pickAlipayBillDate,
+              icon: const Icon(Icons.event_outlined),
+              label: Text(DateFormat('yyyy-MM-dd').format(_alipayBillDate)),
+            ),
+            const SizedBox(height: 12),
+            SegmentedButton<String>(
+              selected: {_alipayImportType},
+              segments: const [
+                ButtonSegment(value: '收入', label: Text('导入为收入')),
+                ButtonSegment(value: '支出', label: Text('导入为支出')),
+              ],
+              onSelectionChanged: _isImportingAlipay
+                  ? null
+                  : (value) => setState(() => _alipayImportType = value.first),
             ),
             const SizedBox(height: 12),
             Align(
               alignment: Alignment.centerRight,
               child: FilledButton.icon(
-                onPressed: () async {
-                  await database.addLedgerEntry(
-                    type: _type,
-                    amount: double.tryParse(_amountController.text) ?? 0,
-                    note: _noteController.text,
-                  );
-                  _amountController.clear();
-                  _noteController.clear();
-                },
-                icon: const Icon(Icons.add),
-                label: const Text('记一笔'),
+                onPressed: _isImportingAlipay
+                    ? null
+                    : () => _importAlipayBill(database),
+                icon: _isImportingAlipay
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.cloud_download_outlined),
+                label: Text(_isImportingAlipay ? '导入中' : '获取并导入'),
               ),
             ),
+            const SizedBox(height: 8),
+            Text(_alipayStatus, style: const TextStyle(color: AppColors.muted)),
           ],
         ),
       ),
@@ -501,6 +590,73 @@ class _LedgerToolState extends ConsumerState<LedgerTool> {
         },
       ),
     );
+  }
+
+  Future<void> _pickAlipayBillDate() async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _alipayBillDate.isBefore(today)
+          ? _alipayBillDate
+          : today.subtract(const Duration(days: 1)),
+      firstDate: DateTime(2020),
+      lastDate: today.subtract(const Duration(days: 1)),
+    );
+    if (picked != null) {
+      setState(() => _alipayBillDate = DateUtils.dateOnly(picked));
+    }
+  }
+
+  Future<void> _importAlipayBill(AppDatabase database) async {
+    setState(() {
+      _isImportingAlipay = true;
+      _alipayStatus = '正在向支付宝请求账单下载地址...';
+    });
+    try {
+      final result = await _alipayService.fetchRecentTradeBill(
+        AlipayBillImportRequest(
+          appId: _alipayAppIdController.text,
+          privateKeyPem: _alipayPrivateKeyController.text,
+          appAuthToken: _alipayAppAuthTokenController.text,
+          billType: _alipayBillTypeController.text,
+          billDate: _alipayBillDate,
+        ),
+      );
+      var imported = 0;
+      for (final record in result.records) {
+        final type = _ledgerTypeForAlipayRecord(record);
+        final inserted = await database.importLedgerEntry(
+          sourceId: record.sourceId,
+          type: type,
+          amount: record.amount,
+          note: record.toLedgerNote(),
+          occurredAt: record.occurredAt,
+        );
+        if (inserted) {
+          imported++;
+        }
+      }
+      final skipped = result.records.length - imported;
+      setState(() {
+        _alipayStatus =
+            '已读取 ${result.records.length} 条，导入 $imported 条，跳过重复 $skipped 条。';
+      });
+    } on AlipayBillImportException catch (error) {
+      setState(() => _alipayStatus = error.message);
+    } catch (error) {
+      setState(() => _alipayStatus = '支付宝账单导入失败：$error');
+    } finally {
+      if (mounted) {
+        setState(() => _isImportingAlipay = false);
+      }
+    }
+  }
+
+  String _ledgerTypeForAlipayRecord(AlipayBillRecord record) {
+    if (!record.isRefund) {
+      return _alipayImportType;
+    }
+    return _alipayImportType == '收入' ? '支出' : '收入';
   }
 }
 
@@ -822,7 +978,7 @@ class _PasswordToolState extends State<PasswordTool> {
                   Clipboard.setData(ClipboardData(text: _password));
                   ScaffoldMessenger.of(
                     context,
-                  ).showSnackBar(const SnackBar(content: Text('密码已复制')));
+                  ).showLatestSnackBar(const SnackBar(content: Text('密码已复制')));
                 },
                 icon: const Icon(Icons.copy_outlined),
                 label: const Text('复制'),

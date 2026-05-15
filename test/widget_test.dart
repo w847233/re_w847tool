@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +9,10 @@ import 'package:personal_toolbox/main.dart';
 import 'package:personal_toolbox/src/data/app_database.dart';
 import 'package:personal_toolbox/src/data/database_provider.dart';
 import 'package:personal_toolbox/src/home/home_layout_repository.dart';
+import 'package:personal_toolbox/src/network/nat_traversal_models.dart';
+import 'package:personal_toolbox/src/network/nat_traversal_repository.dart';
+import 'package:personal_toolbox/src/network/nat_traversal_service.dart';
+import 'package:personal_toolbox/src/network/nat_traversal_tool.dart';
 import 'package:personal_toolbox/src/settings/settings_repository.dart';
 import 'package:personal_toolbox/src/steam_status/steam_status_models.dart';
 import 'package:personal_toolbox/src/steam_status/steam_status_repository.dart';
@@ -150,6 +156,22 @@ void main() {
     await _disposeApp(tester);
   });
 
+  testWidgets('记账页展示支付宝账单导入入口', (tester) async {
+    await _setDesktopSize(tester);
+    await _pumpApp(tester);
+
+    await _tapToolNav(tester, '记账');
+
+    expect(find.text('新增账目'), findsOneWidget);
+    expect(find.text('支付宝账单导入'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'App ID'), findsOneWidget);
+    expect(find.widgetWithText(TextField, '应用私钥 PEM'), findsOneWidget);
+    expect(find.text('获取并导入'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await _disposeApp(tester);
+  });
+
   testWidgets('导航中包含 Steam 状态工具并可进入页面', (tester) async {
     await _setDesktopSize(tester);
     final controller = _FakeSteamStatusController();
@@ -169,12 +191,284 @@ void main() {
 
     expect(find.text('Steam 状态'), findsWidgets);
 
-    await tester.tap(find.text('Steam 状态').first);
-    await _pumpUi(tester);
+    await _tapToolNav(tester, 'Steam 状态');
 
     expect(find.text('连接与账号'), findsOneWidget);
     expect(find.text('Steam 侧车服务已就绪'), findsOneWidget);
     expect(find.text('当前未登录 Steam'), findsOneWidget);
+
+    await _disposeApp(tester);
+  });
+
+  testWidgets('导航中包含检测DNS泄露工具并可进入页面', (tester) async {
+    await _setDesktopSize(tester);
+    await _pumpApp(tester);
+
+    expect(find.text('网络'), findsOneWidget);
+    expect(find.text('检测DNS泄露'), findsWidgets);
+
+    await tester.tap(find.text('检测DNS泄露').first);
+    await _pumpUi(tester);
+
+    expect(find.text('DNS 泄露检测'), findsOneWidget);
+    expect(find.text('全球 DNS 优选'), findsOneWidget);
+    expect(find.text('将优选测试的域名'), findsOneWidget);
+    expect(find.text('只优选国内 DNS 与国内域名'), findsOneWidget);
+    expect(find.text('百度 · baidu.com'), findsOneWidget);
+    expect(find.text('设置系统 DNS'), findsOneWidget);
+
+    await _disposeApp(tester);
+  });
+
+  testWidgets('设置页可以保存 NAT 穿透服务器配置', (tester) async {
+    await _setDesktopSize(tester);
+    final database = await _pumpApp(tester);
+
+    await tester.tap(find.text('设置'));
+    await _pumpUi(tester);
+    await tester.tap(find.text('网络').last);
+    await _pumpUi(tester);
+
+    expect(find.text('设置 · 网络'), findsOneWidget);
+    expect(find.text('NAT 穿透服务器'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'TCP STUN 服务器'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'TCP HTTP 保活服务器'), findsOneWidget);
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'UDP STUN 服务器'),
+      'stun.example.com:3478',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'TCP STUN 服务器'),
+      'tcp-stun.example.com:443',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'TURN 服务器'),
+      'turn.example.com:3478',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'TCP HTTP 保活服务器'),
+      'http.example.com:80',
+    );
+    await tester.tap(find.text('保存服务器设置'));
+    await _pumpUi(tester);
+
+    final saved = await database.getSettingValue(natTraversalConfigKey);
+    expect(saved, contains('stun.example.com:3478'));
+    expect(saved, contains('tcp-stun.example.com:443'));
+    expect(saved, contains('turn.example.com:3478'));
+    expect(saved, contains('http.example.com:80'));
+
+    await _disposeApp(tester);
+  });
+
+  testWidgets('导航中包含 NAT 隧道打洞工具并可进入页面', (tester) async {
+    await _setDesktopSize(tester);
+    await _pumpApp(tester);
+
+    expect(find.text('网络'), findsOneWidget);
+    expect(find.text('NAT隧道打洞'), findsWidgets);
+
+    await tester.tap(find.text('NAT隧道打洞').first);
+    await _pumpUi(tester);
+
+    expect(find.text('NAT 类型检测'), findsOneWidget);
+    expect(find.text('添加打洞转发'), findsOneWidget);
+    expect(find.text('打洞列表'), findsOneWidget);
+    expect(find.text('连通性测试'), findsOneWidget);
+
+    await _disposeApp(tester);
+  });
+
+  testWidgets('nat traversal start button shows feedback', (tester) async {
+    await _setDesktopSize(tester);
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final repository = NatTraversalRepository(database);
+    final now = DateTime.utc(2026, 5, 15);
+    await repository.saveRules([
+      NatTunnelRule(
+        id: 'tcp-without-peer',
+        protocol: NatTunnelProtocol.tcp,
+        targetAddress: '127.0.0.1',
+        targetPort: 9,
+        label: 'TCP 无远端',
+        enabled: false,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    ]);
+    expect((await repository.loadRules()).single.label, 'TCP 无远端');
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [appDatabaseProvider.overrideWithValue(database)],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              padding: EdgeInsets.all(24),
+              child: NatTraversalTool(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await _pumpUntilFound(tester, find.text('TCP 无远端'));
+
+    expect(find.text('打洞列表'), findsOneWidget);
+    expect(find.text('TCP 无远端'), findsOneWidget);
+    expect(find.text('已保存'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(OutlinedButton, '启动').first);
+    await _pumpUntilFound(tester, find.textContaining('当前运行环境没有加载原生 TCP 映射模块'));
+
+    expect(find.text('受限'), findsOneWidget);
+    expect(find.textContaining('当前运行环境没有加载原生 TCP 映射模块'), findsWidgets);
+
+    await _disposeApp(tester);
+  });
+
+  testWidgets('nat traversal save only button persists rule without starting', (
+    tester,
+  ) async {
+    await _setDesktopSize(tester);
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final service = _RecordingNatTraversalService();
+    addTearDown(service.dispose);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [appDatabaseProvider.overrideWithValue(database)],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: NatTraversalTool(service: service),
+            ),
+          ),
+        ),
+      ),
+    );
+    await _pumpUntilFound(tester, find.text('添加打洞转发'));
+
+    await tester.enterText(find.widgetWithText(TextField, '名称'), '仅保存规则');
+    await tester.enterText(find.widgetWithText(TextField, '本地端口'), '8080');
+    final saveButton = find.widgetWithText(OutlinedButton, '保存');
+    await tester.ensureVisible(saveButton);
+    await tester.tap(saveButton);
+    await _pumpUi(tester);
+    await _pumpUntilFound(tester, find.text('仅保存规则'));
+
+    final repository = NatTraversalRepository(database);
+    final rules = await repository.loadRules();
+    expect(rules, hasLength(1));
+    expect(rules.single.label, '仅保存规则');
+    expect(rules.single.enabled, isFalse);
+    expect(service.startTunnelCalls, 0);
+    expect(find.text('已保存'), findsOneWidget);
+    expect(find.text('运行中'), findsNothing);
+
+    await _disposeApp(tester);
+  });
+
+  testWidgets('nat traversal auto start toggle only updates saved state', (
+    tester,
+  ) async {
+    await _setDesktopSize(tester);
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final repository = NatTraversalRepository(database);
+    final service = _RecordingNatTraversalService();
+    addTearDown(service.dispose);
+    final now = DateTime.utc(2026, 5, 15);
+    await repository.saveRules([
+      NatTunnelRule(
+        id: 'auto-start-rule',
+        protocol: NatTunnelProtocol.tcp,
+        targetAddress: '127.0.0.1',
+        targetPort: 9,
+        label: '自动打洞规则',
+        enabled: false,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [appDatabaseProvider.overrideWithValue(database)],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: NatTraversalTool(service: service),
+            ),
+          ),
+        ),
+      ),
+    );
+    await _pumpUntilFound(tester, find.text('自动打洞规则'));
+
+    expect(find.widgetWithText(OutlinedButton, '自动打洞：关'), findsOneWidget);
+    await tester.tap(find.widgetWithText(OutlinedButton, '自动打洞：关'));
+    await _pumpUntilFound(
+      tester,
+      find.widgetWithText(OutlinedButton, '自动打洞：开'),
+    );
+
+    final updatedRules = await repository.loadRules();
+    expect(updatedRules.single.enabled, isTrue);
+    expect(service.startTunnelCalls, 0);
+
+    await _disposeApp(tester);
+  });
+
+  testWidgets('NAT 页面慢速地址和端口加载不会阻塞规则列表', (tester) async {
+    await _setDesktopSize(tester);
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final repository = NatTraversalRepository(database);
+    final service = _SlowNatTraversalService();
+    addTearDown(service.dispose);
+    final now = DateTime.utc(2026, 5, 15);
+    await repository.saveRules([
+      NatTunnelRule(
+        id: 'async-load-rule',
+        protocol: NatTunnelProtocol.tcp,
+        targetAddress: '127.0.0.1',
+        targetPort: 8080,
+        label: '异步加载规则',
+        enabled: false,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [appDatabaseProvider.overrideWithValue(database)],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: NatTraversalTool(service: service),
+            ),
+          ),
+        ),
+      ),
+    );
+    await _pumpUntilFound(tester, find.text('异步加载规则'));
+
+    expect(find.text('NAT 类型检测'), findsOneWidget);
+    expect(find.text('异步加载规则'), findsOneWidget);
+    expect(service.addressesCompleted, isFalse);
+
+    service.completeAddresses();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+
+    expect(service.portsRequested, isTrue);
 
     await _disposeApp(tester);
   });
@@ -204,8 +498,7 @@ void main() {
     );
     await _pumpUi(tester);
 
-    await tester.tap(find.text('Steam 状态').first);
-    await _pumpUi(tester);
+    await _tapToolNav(tester, 'Steam 状态');
 
     expect(find.text('正在向 Steam 提交登录请求...'), findsWidgets);
     expect(find.byType(LinearProgressIndicator), findsOneWidget);
@@ -245,8 +538,7 @@ void main() {
     );
     await _pumpUi(tester);
 
-    await tester.tap(find.text('Steam 状态').first);
-    await _pumpUi(tester);
+    await _tapToolNav(tester, 'Steam 状态');
 
     expect(find.text('Steam 操作失败'), findsOneWidget);
     expect(find.text('连接 Steam CM 服务器失败：测试错误'), findsOneWidget);
@@ -283,8 +575,7 @@ void main() {
     );
     await _pumpUi(tester);
 
-    await tester.tap(find.text('Steam 状态').first);
-    await _pumpUi(tester);
+    await _tapToolNav(tester, 'Steam 状态');
 
     final awayChip = find.widgetWithText(ChoiceChip, '离开');
     final busyChip = find.widgetWithText(ChoiceChip, '忙碌');
@@ -319,6 +610,34 @@ Future<AppDatabase> _pumpApp(WidgetTester tester) async {
 Future<void> _pumpUi(WidgetTester tester) async {
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 100));
+}
+
+Future<void> _pumpUntilFound(
+  WidgetTester tester,
+  Finder finder, {
+  Duration timeout = const Duration(seconds: 3),
+}) async {
+  final step = const Duration(milliseconds: 100);
+  var elapsed = Duration.zero;
+  while (elapsed < timeout) {
+    await tester.pump();
+    if (finder.evaluate().isNotEmpty) {
+      return;
+    }
+    await tester.runAsync(() async {
+      await Future<void>.delayed(step);
+    });
+    elapsed += step;
+  }
+  await tester.pump();
+}
+
+Future<void> _tapToolNav(WidgetTester tester, String label) async {
+  await tester.drag(find.byType(ListView).first, const Offset(0, -180));
+  await _pumpUi(tester);
+  final item = find.text(label).first;
+  await tester.tap(item);
+  await _pumpUi(tester);
 }
 
 Future<void> _disposeApp(WidgetTester tester) async {
@@ -385,5 +704,54 @@ class _FakeSteamStatusController extends SteamStatusController {
   @override
   Future<void> dispose() async {
     await _database.close();
+  }
+}
+
+class _SlowNatTraversalService extends NatTraversalService {
+  final Completer<List<NatLocalAddress>> _addressesCompleter =
+      Completer<List<NatLocalAddress>>();
+
+  bool portsRequested = false;
+  bool get addressesCompleted => _addressesCompleter.isCompleted;
+
+  void completeAddresses() {
+    if (_addressesCompleter.isCompleted) {
+      return;
+    }
+    _addressesCompleter.complete(const [
+      NatLocalAddress(address: '127.0.0.1', label: '127.0.0.1 · 本机回环'),
+      NatLocalAddress(address: '192.168.1.10', label: '192.168.1.10 · 测试网卡'),
+    ]);
+  }
+
+  @override
+  Future<List<NatLocalAddress>> listLocalAddresses() {
+    return _addressesCompleter.future;
+  }
+
+  @override
+  Future<List<NatPortCandidate>> listOpenPorts() async {
+    portsRequested = true;
+    return const <NatPortCandidate>[];
+  }
+}
+
+class _RecordingNatTraversalService extends NatTraversalService {
+  int startTunnelCalls = 0;
+
+  @override
+  Future<NatTunnelSnapshot> startTunnel(
+    NatTunnelRule rule,
+    NatTraversalConfig config,
+  ) async {
+    startTunnelCalls++;
+    return NatTunnelSnapshot(
+      ruleId: rule.id,
+      protocol: rule.protocol,
+      status: NatTunnelStatus.active,
+      message: 'recorded start',
+      publicIp: '203.0.113.10',
+      publicPort: 12345,
+    );
   }
 }

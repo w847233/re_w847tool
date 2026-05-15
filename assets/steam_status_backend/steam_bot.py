@@ -930,8 +930,7 @@ def _build_games_played_msg(
 ) -> MsgProto:
     """构建 ClientGamesPlayed 消息。
 
-    use_real_game_name=True 时，不设置 game_extra_info，
-    让 Steam 显示真实游戏名称和图标（Rich Presence 正常工作的前提）。
+    use_real_game_name=True 时，不设置 game_extra_info，让 Steam 显示真实游戏名称。
     use_real_game_name=False 时，设置 game_extra_info 展示自定义文字。
     """
     msg = MsgProto(EMsg.ClientGamesPlayed)
@@ -1022,6 +1021,7 @@ class SteamBot:
         self._current_status: str | None = None
         self._current_app_id: int | None = None
         self._current_rich_text: str | None = None
+        self._current_rich_presence_status: str | None = None
         self._current_rich_presence_values: dict[str, str] = {}
         self._current_persona_state: EPersonaState = EPersonaState.Online
         self._current_persona_state_flags: int = 0
@@ -1054,6 +1054,9 @@ class SteamBot:
 
     @property
     def current_rich_text(self) -> str | None: return self._current_rich_text
+
+    @property
+    def current_rich_presence_status(self) -> str | None: return self._current_rich_presence_status
 
     @property
     def current_persona_state(self) -> EPersonaState: return self._current_persona_state
@@ -1180,6 +1183,7 @@ class SteamBot:
                         self._current_app_id,
                         noisy=False,
                         rich_text=self._current_rich_text,
+                        rich_presence_status=self._current_rich_presence_status,
                         rich_presence_values=dict(self._current_rich_presence_values),
                     )
                 
@@ -1215,8 +1219,7 @@ class SteamBot:
                 if not friend_ids:
                     logger.debug("RP 保活：好友列表为空，跳过本次重发")
                     continue
-                use_rp_status = bool(self._current_rich_text and self._current_app_id)
-                rp_status = self._current_status if use_rp_status else ""
+                rp_status = self._current_rich_presence_status or ""
                 try:
                     self.client.send(_build_rich_presence_msg(
                         self._current_rich_text,
@@ -1491,6 +1494,7 @@ class SteamBot:
         app_id: int | None = None,
         noisy: bool = False,
         rich_text: str | None = None,
+        rich_presence_status: str | None = None,
         rich_presence_values: dict[str, str] | None = None,
     ) -> bool:
         if not self._logged_in:
@@ -1505,20 +1509,26 @@ class SteamBot:
             )
             return False
 
-        # 当使用真实 app_id + rich_text 时，不设置 game_extra_info
-        # 否则会覆盖 game_played_app_id 传播，导致好友端无法解析 RP token
-        use_real_game_name = bool(rich_text and app_id)
+        # status_text 负责好友列表上方的显示名称；真实 app_id 仍保留给图标和 RP token 解析。
+        use_real_game_name = not bool(status_text.strip())
         msg = _build_games_played_msg(status_text, app_id, use_real_game_name=use_real_game_name)
 
-        if use_real_game_name:
+        if rich_text and app_id:
             logger.info(
-                "Rich Presence 模式：game_extra_info 留空，appid=%s，自定义文字放入 RP status",
+                "Rich Presence 模式：game_extra_info=%s，appid=%s，RP status=%s",
+                status_text if not use_real_game_name else "<真实游戏名>",
                 app_id,
+                rich_presence_status or "",
             )
 
         self._current_status = status_text
         self._current_app_id = app_id
         self._current_rich_text = rich_text or None
+        self._current_rich_presence_status = (
+            (rich_presence_status or "").strip()
+            if self._current_rich_text
+            else None
+        ) or None
         self._current_rich_presence_values = (
             _sanitize_rich_presence_values(rich_presence_values)
             if self._current_rich_text
@@ -1533,10 +1543,11 @@ class SteamBot:
             "status": status_text,
             "app_id": app_id,
             "rich_text": self._current_rich_text,
+            "rich_presence_status": self._current_rich_presence_status,
         })
 
         friend_ids = self._get_friend_steamids()
-        rp_status = status_text if use_real_game_name else ""
+        rp_status = self._current_rich_presence_status or ""
 
         if noisy:
             def noisy_task():
@@ -1604,6 +1615,7 @@ class SteamBot:
         self._current_status = None
         self._current_app_id = None
         self._current_rich_text = None
+        self._current_rich_presence_status = None
         self._current_rich_presence_values = {}
         self._current_persona_state_flags &= ~RICH_PRESENCE_PERSONA_FLAG
         self._on_status_change("status_cleared", {})

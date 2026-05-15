@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'src/app_router.dart';
+import 'src/network/nat_traversal_service.dart';
 import 'src/settings/font_weight_option.dart';
 import 'src/settings/settings_repository.dart';
 import 'src/theme/app_theme.dart';
@@ -18,6 +19,7 @@ class PersonalToolboxApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final preferredWeight = ref.watch(preferredFontWeightProvider);
     final router = ref.watch(appRouterProvider);
+    ref.watch(natTraversalStartupProvider);
     final fontWeight = preferredWeight.maybeWhen(
       data: (value) => value,
       orElse: () => defaultFontWeightOption.weight,

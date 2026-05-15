@@ -1,5 +1,8 @@
 ## 项目测试技能
 
+- 不要在每次任务完成后默认执行编译、`build`、`flutter analyze`、`flutter test` 或类似全量验证。
+- 仅在以下情况才主动执行编译或较重验证：用户明确要求、改动直接影响构建链路或编译结果、需要复现或确认编译错误、准备交付发布相关变更。
+- 对提示词、文档、注释、纯配置微调或可静态确认的小改动，优先做静态检查和针对性验证，不要习惯性在收尾时自动编译。
 - 在 `D:\Project\re_w847tool` 中运行、调试、加速或解释测试前，先使用 `re-w847tool-testing` skill。
 - 若测试失败、超时、卡住、锁定 `sqlite3.dll`，或出现明显延长测试时长的问题，按该 skill 的 `Self-Evolution` 流程记录事件。
 - 记录位置：`C:\Users\w847\.codex\skills\re-w847tool-testing\references\test-history.md`。

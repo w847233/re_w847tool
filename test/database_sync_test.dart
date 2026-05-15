@@ -3,6 +3,8 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_toolbox/src/data/app_database.dart';
 import 'package:personal_toolbox/src/home/home_layout_repository.dart';
+import 'package:personal_toolbox/src/network/nat_traversal_models.dart';
+import 'package:personal_toolbox/src/network/nat_traversal_repository.dart';
 import 'package:personal_toolbox/src/settings/settings_repository.dart';
 
 void main() {
@@ -95,6 +97,42 @@ void main() {
     await database.importPlainSnapshot(staleRemote);
 
     expect(await database.getSettingValue(preferredFontWeightKey), '900');
+  });
+
+  test('NAT 穿透配置和打洞规则会保存到本地设置', () async {
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final repository = NatTraversalRepository(database);
+
+    await repository.saveConfig(
+      const NatTraversalConfig(
+        stunServer: 'stun.example.com:3478',
+        tcpStunServer: 'tcp-stun.example.com:443',
+        turnServer: 'turn.example.com:3478',
+        turnUsername: 'user',
+        turnPassword: 'secret',
+        tcpKeepAliveServer: 'http.example.com:80',
+      ),
+    );
+    await repository.addRule(
+      protocol: NatTunnelProtocol.udp,
+      targetAddress: '127.0.0.1',
+      targetPort: 5353,
+      label: '本机 UDP 服务',
+      remoteHost: '203.0.113.10',
+      remotePort: 40000,
+    );
+
+    final config = await repository.loadConfig();
+    final rules = await repository.loadRules();
+
+    expect(config.stunServer, 'stun.example.com:3478');
+    expect(config.tcpStunServer, 'tcp-stun.example.com:443');
+    expect(config.turnUsername, 'user');
+    expect(config.tcpKeepAliveServer, 'http.example.com:80');
+    expect(rules.single.protocol, NatTunnelProtocol.udp);
+    expect(rules.single.targetPort, 5353);
+    expect(rules.single.remotePort, 40000);
   });
 
   test('主页布局缺失、损坏或未知小组件时回退到有效默认布局', () async {

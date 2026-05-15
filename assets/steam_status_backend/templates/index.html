@@ -205,7 +205,7 @@
           type="text"
           id="statusInput"
           class="input"
-          placeholder="输入状态文字（例：在摸鱼 🐟）"
+          placeholder="上方显示名称（例：长门有希的忧郁）"
           maxlength="64"
           autocomplete="off"
         />
@@ -264,6 +264,15 @@
             placeholder="必须填 Token Key，如：#display_Lobby（从下方列表选择）"
             maxlength="128"
             autocomplete="off"
+          />
+          <input
+            type="text"
+            id="richPresenceStatusInput"
+            class="input input-sm"
+            placeholder="富文本状态内容，留空则使用上方显示名称"
+            maxlength="128"
+            autocomplete="off"
+            style="margin-top:8px;"
           />
 
           <!-- Token 获取区域 -->
@@ -378,8 +387,13 @@
 
     function addHistory(entry) {
       const list = getHistory();
-      // 去重（相同文字+app_id 不重复添加）
-      const exists = list.some(h => h.text === entry.text && h.app_id === entry.app_id);
+      // 去重（相同上方名称、AppID、RP token 和 RP 内容不重复添加）
+      const exists = list.some(h =>
+        h.text === entry.text &&
+        h.app_id === entry.app_id &&
+        h.rich_text === entry.rich_text &&
+        (h.rich_presence_status || "") === (entry.rich_presence_status || "")
+      );
       if (!exists) {
         list.unshift({ ...entry, time: Date.now() });
         localStorage.setItem("status_history", JSON.stringify(list.slice(0, 30)));
@@ -451,7 +465,9 @@
         statusText.textContent = state.current_status;
         if (state.current_rich_text) {
           richRow.style.display = "block";
-          richText.textContent = state.current_rich_text;
+          richText.textContent = state.current_rich_presence_status
+            ? `${state.current_rich_text} · ${state.current_rich_presence_status}`
+            : state.current_rich_text;
         } else {
           richRow.style.display = "none";
         }
@@ -480,10 +496,10 @@
         return;
       }
       list.innerHTML = history.map(h => `
-        <div class="history-item" onclick="applyHistoryItem('${escapeAttr(h.text)}', ${h.app_id || 'null'}, ${h.rich_text ? "'" + escapeAttr(h.rich_text) + "'" : 'null'})">
+        <div class="history-item" onclick="applyHistoryItem('${escapeAttr(h.text)}', ${h.app_id || 'null'}, ${h.rich_text ? "'" + escapeAttr(h.rich_text) + "'" : 'null'}, ${h.rich_presence_status ? "'" + escapeAttr(h.rich_presence_status) + "'" : 'null'})">
           <div class="history-text">${escapeHtml(h.text)}</div>
           <div class="history-meta">
-            ${h.app_id ? `AppID: ${h.app_id} · ` : ""}${h.rich_text ? `🧪 ${escapeHtml(h.rich_text)} · ` : ""}${formatTime(h.time)}
+            ${h.app_id ? `AppID: ${h.app_id} · ` : ""}${h.rich_text ? `🧪 ${escapeHtml(h.rich_text)} · ` : ""}${h.rich_presence_status ? `${escapeHtml(h.rich_presence_status)} · ` : ""}${formatTime(h.time)}
           </div>
         </div>
       `).join("");
@@ -660,6 +676,9 @@
       const noisyMode = document.getElementById("noisyMode").checked;
       const useRP = document.getElementById("useRichPresence").checked;
       const rich_text = useRP ? document.getElementById("richTextInput").value.trim() : null;
+      const rich_presence_status = useRP
+        ? document.getElementById("richPresenceStatusInput").value.trim()
+        : "";
 
       // 校验 rich_text：勾选了 RP 时必须填写 Token Key
       if (useRP && !rich_text) {
@@ -677,11 +696,12 @@
       }
       const selectedToken = document.getElementById("rpTokensSelect")?.selectedOptions?.[0];
       const rich_presence_values = {};
+      const placeholder_value = rich_presence_status || text;
       if (selectedToken && selectedToken.value === rich_text) {
         (selectedToken.dataset.placeholders || "")
           .split(",")
           .filter(Boolean)
-          .forEach(key => { rich_presence_values[key] = text; });
+          .forEach(key => { rich_presence_values[key] = placeholder_value; });
       }
 
       try {
@@ -693,6 +713,7 @@
             app_id,
             noisy: noisyMode,
             rich_text: rich_text || null,
+            rich_presence_status: rich_presence_status || null,
             rich_presence_values: Object.keys(rich_presence_values).length
               ? rich_presence_values
               : null,
@@ -701,7 +722,7 @@
         const data = await res.json();
         if (data.success) {
           showToast("✅ 状态已设置！" + (rich_text ? " (含 Rich Presence)" : ""), "success");
-          addHistory({ text, app_id, rich_text });
+          addHistory({ text, app_id, rich_text, rich_presence_status });
           renderHistory();
           await fetchState();
         } else {
@@ -814,7 +835,7 @@
       }
     }
 
-    function applyHistoryItem(text, app_id, rich_text) {
+    function applyHistoryItem(text, app_id, rich_text, rich_presence_status = null) {
       document.getElementById("statusInput").value = text;
       updateCharCount();
       if (app_id) {
@@ -829,10 +850,12 @@
         document.getElementById("useRichPresence").checked = true;
         document.getElementById("richPresenceWrap").style.display = "block";
         document.getElementById("richTextInput").value = rich_text;
+        document.getElementById("richPresenceStatusInput").value = rich_presence_status || "";
       } else {
         document.getElementById("useRichPresence").checked = false;
         document.getElementById("richPresenceWrap").style.display = "none";
         document.getElementById("richTextInput").value = "";
+        document.getElementById("richPresenceStatusInput").value = "";
       }
     }
 
@@ -879,6 +902,8 @@
       if (!checked) {
         document.getElementById("rpTokensDropdownWrap").style.display = "none";
         document.getElementById("rpTokensStatus").textContent = "";
+        document.getElementById("richTextInput").value = "";
+        document.getElementById("richPresenceStatusInput").value = "";
       }
     }
 
@@ -957,7 +982,7 @@
         .split(",")
         .filter(Boolean);
       const placeholderText = placeholders.length
-        ? `<br><span style="color:var(--text-muted)">占位符 ${escapeHtml(placeholders.join(", "))} 会用上方状态文字自动填充</span>`
+        ? `<br><span style="color:var(--text-muted)">占位符 ${escapeHtml(placeholders.join(", "))} 会用富文本状态内容自动填充</span>`
         : "";
       preview.innerHTML = `<span style="color:var(--color-accent);font-weight:600;">将发送 Token：</span>${escapeHtml(selected.value)}<br><span style="color:var(--text-muted)">好友看到的效果：${escapeHtml(displayStr)}</span>${placeholderText}`;
       preview.style.display = "block";
@@ -977,6 +1002,9 @@
 
     document.getElementById("statusInput").addEventListener("input", updateCharCount);
     document.getElementById("statusInput").addEventListener("keydown", e => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); setStatus(); }
+    });
+    document.getElementById("richPresenceStatusInput").addEventListener("keydown", e => {
       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); setStatus(); }
     });
     document.getElementById("guardCodeInput").addEventListener("keydown", e => {
@@ -1067,6 +1095,7 @@
 
     function showToast(msg, type = "info") {
       const container = document.getElementById("toastContainer");
+      container.querySelectorAll(".toast").forEach((item) => item.remove());
       const toast = document.createElement("div");
       toast.className = `toast toast-${type}`;
       toast.textContent = msg;

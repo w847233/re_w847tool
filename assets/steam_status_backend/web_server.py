@@ -114,11 +114,11 @@ def _resolve_rich_presence_values(
     steam_client,
     app_id: int | None,
     rich_text: str | None,
-    status_text: str,
+    placeholder_text: str,
     language: str = "english",
 ) -> dict[str, str]:
     """根据 token localization 自动补齐 Rich Presence 占位符 KV。"""
-    if not app_id or not rich_text or not status_text:
+    if not app_id or not rich_text or not placeholder_text:
         return {}
 
     tokens = _fetch_rich_presence_tokens(steam_client, app_id, language)
@@ -128,10 +128,10 @@ def _resolve_rich_presence_values(
         return {}
 
     placeholders = token.get("placeholders") or []
-    values = {key: status_text for key in placeholders if key != "steam_display"}
+    values = {key: placeholder_text for key in placeholders if key != "steam_display"}
     if values:
         logger.info(
-            "Rich Presence token %s 需要占位符 %s，已使用状态文字自动填充",
+            "Rich Presence token %s 需要占位符 %s，已使用富文本内容自动填充",
             rich_text,
             ", ".join(values.keys()),
         )
@@ -220,6 +220,7 @@ def create_app(bot) -> Flask:
             "current_status": bot.current_status,
             "current_app_id": bot.current_app_id,
             "current_rich_text": bot.current_rich_text,
+            "current_rich_presence_status": bot.current_rich_presence_status,
             "current_persona_state": bot.current_persona_state.value,
             "current_persona_state_name": bot.current_persona_state.name,
             "current_persona_state_flags": bot.current_persona_state_flags,
@@ -518,6 +519,7 @@ def create_app(bot) -> Flask:
         app_id = int(app_id_raw) if app_id_raw not in (None, "", 0) else None
         noisy = bool(data.get("noisy", False))
         rich_text = (data.get("rich_text") or "").strip() or None
+        rich_presence_status = (data.get("rich_presence_status") or "").strip()
         language = (data.get("language") or "english").strip() or "english"
         raw_rp_values = data.get("rich_presence_values")
         rich_presence_values = (
@@ -531,7 +533,7 @@ def create_app(bot) -> Flask:
                     bot.client,
                     app_id,
                     rich_text,
-                    status_text,
+                    rich_presence_status or status_text,
                     language,
                 )
             except Exception as e:
@@ -542,6 +544,7 @@ def create_app(bot) -> Flask:
             app_id,
             noisy,
             rich_text=rich_text,
+            rich_presence_status=rich_presence_status or (status_text if rich_text else None),
             rich_presence_values=rich_presence_values,
         )
         if not ok:
@@ -552,6 +555,7 @@ def create_app(bot) -> Flask:
             "app_id": app_id,
             "noisy": noisy,
             "rich_text": rich_text,
+            "rich_presence_status": rich_presence_status or (status_text if rich_text else None),
             "rich_presence_placeholders": list(rich_presence_values.keys()),
         })
 

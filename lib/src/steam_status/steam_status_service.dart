@@ -227,10 +227,12 @@ class SteamStatusController {
     int? appId,
     required bool noisy,
     String? richText,
+    String? richPresenceStatus,
     Map<String, String>? richPresenceValues,
   }) async {
     final normalizedText = text.trim();
     final normalizedRichText = _normalizeOptional(richText);
+    final normalizedRichPresenceStatus = _normalizeOptional(richPresenceStatus);
     if (normalizedText.isEmpty) {
       return const SteamActionResult(success: false, message: '请输入状态文字');
     }
@@ -247,6 +249,7 @@ class SteamStatusController {
         'app_id': appId,
         'noisy': noisy,
         'rich_text': normalizedRichText,
+        'rich_presence_status': normalizedRichPresenceStatus,
         'rich_presence_values': richPresenceValues,
       },
       successMessage: normalizedRichText == null
@@ -909,6 +912,9 @@ class SteamStatusController {
         currentAppId: payload['current_app_id'] as int?,
         currentRichText: _normalizeOptional(
           payload['current_rich_text'] as String?,
+        ),
+        currentRichPresenceStatus: _normalizeOptional(
+          payload['current_rich_presence_status'] as String?,
         ),
         personaState: payload['current_persona_state'] as int? ?? 1,
         personaStateName:

@@ -7,6 +7,9 @@ import '../settings/font_weight_option.dart';
 import '../settings/settings_repository.dart';
 import '../theme/app_theme.dart';
 import '../ui/app_panel.dart';
+import '../ui/latest_snack_bar.dart';
+import '../network/nat_traversal_models.dart';
+import '../network/nat_traversal_repository.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key, required this.section});
@@ -173,6 +176,7 @@ class _SettingsBody extends StatelessWidget {
     return SingleChildScrollView(
       child: switch (section) {
         _SettingsSection.personalization => const _PersonalizationPanel(),
+        _SettingsSection.network => const _NetworkSettingsPanel(),
         _SettingsSection.about => const _AboutPanel(),
       },
     );
@@ -214,7 +218,7 @@ class _PersonalizationPanel extends ConsumerWidget {
                           .read(settingsRepositoryProvider)
                           .setPreferredFontWeight(option.value);
                     } catch (_) {
-                      messenger.showSnackBar(
+                      messenger.showLatestSnackBar(
                         const SnackBar(content: Text('字体设置保存失败，已保留原设置')),
                       );
                     }
@@ -243,6 +247,186 @@ class _PersonalizationPanel extends ConsumerWidget {
         ],
       ),
     );
+  }
+}
+
+class _NetworkSettingsPanel extends ConsumerStatefulWidget {
+  const _NetworkSettingsPanel();
+
+  @override
+  ConsumerState<_NetworkSettingsPanel> createState() =>
+      _NetworkSettingsPanelState();
+}
+
+class _NetworkSettingsPanelState extends ConsumerState<_NetworkSettingsPanel> {
+  final _stunController = TextEditingController();
+  final _tcpStunController = TextEditingController();
+  final _turnController = TextEditingController();
+  final _turnUsernameController = TextEditingController();
+  final _turnPasswordController = TextEditingController();
+  final _tcpKeepAliveController = TextEditingController();
+  bool _loaded = false;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadConfig());
+  }
+
+  @override
+  void dispose() {
+    _stunController.dispose();
+    _tcpStunController.dispose();
+    _turnController.dispose();
+    _turnUsernameController.dispose();
+    _turnPasswordController.dispose();
+    _tcpKeepAliveController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppPanel(
+      title: 'NAT 穿透服务器',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'UDP STUN 用于检测公网映射和 NAT 行为；TCP 映射需要一个支持 TCP 的 STUN 服务器和一个 HTTP 保活服务器。TURN 用于中继兜底。',
+            style: TextStyle(color: AppColors.muted),
+          ),
+          const SizedBox(height: 18),
+          if (!_loaded) ...[
+            const LinearProgressIndicator(),
+          ] else ...[
+            TextField(
+              controller: _stunController,
+              decoration: const InputDecoration(
+                labelText: 'UDP STUN 服务器',
+                hintText: NatTraversalConfig.defaultStunServer,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _tcpStunController,
+              decoration: const InputDecoration(
+                labelText: 'TCP STUN 服务器',
+                hintText: NatTraversalConfig.defaultTcpStunServer,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _turnController,
+              decoration: const InputDecoration(
+                labelText: 'TURN 服务器',
+                hintText: 'turn.example.com:3478',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _turnUsernameController,
+              decoration: const InputDecoration(labelText: 'TURN 用户名'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _turnPasswordController,
+              obscureText: true,
+              decoration: const InputDecoration(labelText: 'TURN 密码'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _tcpKeepAliveController,
+              decoration: const InputDecoration(
+                labelText: 'TCP HTTP 保活服务器',
+                hintText: NatTraversalConfig.defaultTcpKeepAliveServer,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.bg,
+                border: Border.all(color: AppColors.border),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                '注意：TCP 模式会从同一本地端口建立 HTTP 保活和 TCP STUN 映射，再监听该端口转发到本地服务。UDP 检测为 Full Cone 只说明 UDP 行为正常；TCP STUN 地址还必须能接受 TCP 连接。',
+                style: TextStyle(color: AppColors.muted),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                onPressed: _saving ? null : _saveConfig,
+                icon: _saving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.save_outlined),
+                label: Text(_saving ? '保存中...' : '保存服务器设置'),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _loadConfig() async {
+    final config = await ref.read(natTraversalRepositoryProvider).loadConfig();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _stunController.text = config.stunServer;
+      _tcpStunController.text = config.tcpStunServer;
+      _turnController.text = config.turnServer;
+      _turnUsernameController.text = config.turnUsername;
+      _turnPasswordController.text = config.turnPassword;
+      _tcpKeepAliveController.text = config.tcpKeepAliveServer;
+      _loaded = true;
+    });
+  }
+
+  Future<void> _saveConfig() async {
+    setState(() => _saving = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref
+          .read(natTraversalRepositoryProvider)
+          .saveConfig(
+            NatTraversalConfig(
+              stunServer: _stunController.text.trim().isEmpty
+                  ? NatTraversalConfig.defaultStunServer
+                  : _stunController.text.trim(),
+              tcpStunServer: _tcpStunController.text.trim().isEmpty
+                  ? NatTraversalConfig.defaultTcpStunServer
+                  : _tcpStunController.text.trim(),
+              turnServer: _turnController.text.trim(),
+              turnUsername: _turnUsernameController.text.trim(),
+              turnPassword: _turnPasswordController.text,
+              tcpKeepAliveServer: _tcpKeepAliveController.text.trim().isEmpty
+                  ? NatTraversalConfig.defaultTcpKeepAliveServer
+                  : _tcpKeepAliveController.text.trim(),
+            ),
+          );
+      messenger.showLatestSnackBar(
+        const SnackBar(content: Text('NAT 穿透服务器设置已保存')),
+      );
+    } catch (_) {
+      messenger.showLatestSnackBar(
+        const SnackBar(content: Text('NAT 穿透服务器设置保存失败')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
   }
 }
 
@@ -374,6 +558,7 @@ class _InfoRow extends StatelessWidget {
 
 enum _SettingsSection {
   personalization('personalization', '个性化', Icons.tune_outlined),
+  network('network', '网络', Icons.router_outlined),
   about('about', '关于', Icons.info_outline);
 
   const _SettingsSection(this.id, this.title, this.icon);

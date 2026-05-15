@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../data/app_database.dart';
 import '../theme/app_theme.dart';
 import '../ui/app_panel.dart';
+import '../ui/latest_snack_bar.dart';
 import 'steam_status_models.dart';
 import 'steam_status_repository.dart';
 import 'steam_status_service.dart';
@@ -23,6 +24,7 @@ class _SteamStatusToolState extends ConsumerState<SteamStatusTool> {
   final _statusController = TextEditingController();
   final _appIdController = TextEditingController(text: '480');
   final _richTextController = TextEditingController();
+  final _richPresenceStatusController = TextEditingController();
 
   bool _useAppId = true;
   bool _noisyMode = false;
@@ -41,6 +43,7 @@ class _SteamStatusToolState extends ConsumerState<SteamStatusTool> {
     _statusController.dispose();
     _appIdController.dispose();
     _richTextController.dispose();
+    _richPresenceStatusController.dispose();
     super.dispose();
   }
 
@@ -227,6 +230,7 @@ class _SteamStatusToolState extends ConsumerState<SteamStatusTool> {
             statusController: _statusController,
             appIdController: _appIdController,
             richTextController: _richTextController,
+            richPresenceStatusController: _richPresenceStatusController,
             useAppId: _useAppId,
             noisyMode: _noisyMode,
             useRichPresence: _useRichPresence,
@@ -241,6 +245,7 @@ class _SteamStatusToolState extends ConsumerState<SteamStatusTool> {
                 _rpTokens = const <SteamRichPresenceToken>[];
                 _selectedToken = null;
                 _richTextController.clear();
+                _richPresenceStatusController.clear();
               }
             }),
             onSelectAppIdPreset: (value) {
@@ -287,6 +292,11 @@ class _SteamStatusToolState extends ConsumerState<SteamStatusTool> {
             onSubmit: () async {
               final selectedToken = _selectedToken;
               final richText = _richTextController.text.trim();
+              final richPresenceStatus = _richPresenceStatusController.text
+                  .trim();
+              final placeholderValue = richPresenceStatus.isEmpty
+                  ? _statusController.text.trim()
+                  : richPresenceStatus;
               final richPresenceValues =
                   selectedToken == null ||
                       !_useRichPresence ||
@@ -294,7 +304,7 @@ class _SteamStatusToolState extends ConsumerState<SteamStatusTool> {
                   ? null
                   : {
                       for (final key in selectedToken.placeholders)
-                        key: _statusController.text.trim(),
+                        key: placeholderValue,
                     };
               await _showResult(
                 await controller.setStatus(
@@ -304,6 +314,9 @@ class _SteamStatusToolState extends ConsumerState<SteamStatusTool> {
                       : null,
                   noisy: _noisyMode,
                   richText: _useRichPresence ? richText : null,
+                  richPresenceStatus: _useRichPresence
+                      ? richPresenceStatus
+                      : null,
                   richPresenceValues: richPresenceValues,
                 ),
               );
@@ -374,6 +387,7 @@ class _SteamStatusToolState extends ConsumerState<SteamStatusTool> {
       _appIdController.text = appId?.toString() ?? _appIdController.text;
       _useRichPresence = richText != null;
       _richTextController.text = richText ?? '';
+      _richPresenceStatusController.clear();
       _selectedToken = null;
     });
   }
@@ -387,14 +401,9 @@ class _SteamStatusToolState extends ConsumerState<SteamStatusTool> {
       return;
     }
     final messenger = ScaffoldMessenger.of(context);
-    // 状态切换可能在短时间内连续触发，只保留最新提示，避免旧消息排队占用太久。
-    messenger.clearSnackBars();
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: error ? AppColors.bad : null,
-      ),
+    messenger.showLatestSnackMessage(
+      message,
+      backgroundColor: error ? AppColors.bad : null,
     );
   }
 }
@@ -1169,6 +1178,7 @@ class _StatusEditorPanel extends StatelessWidget {
     required this.statusController,
     required this.appIdController,
     required this.richTextController,
+    required this.richPresenceStatusController,
     required this.useAppId,
     required this.noisyMode,
     required this.useRichPresence,
@@ -1189,6 +1199,7 @@ class _StatusEditorPanel extends StatelessWidget {
   final TextEditingController statusController;
   final TextEditingController appIdController;
   final TextEditingController richTextController;
+  final TextEditingController richPresenceStatusController;
   final bool useAppId;
   final bool noisyMode;
   final bool useRichPresence;
@@ -1252,6 +1263,14 @@ class _StatusEditorPanel extends StatelessWidget {
                         style: const TextStyle(color: AppColors.muted),
                       ),
                     ),
+                  if (remote.currentRichPresenceStatus != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        '富文本内容：${remote.currentRichPresenceStatus}',
+                        style: const TextStyle(color: AppColors.muted),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -1261,7 +1280,7 @@ class _StatusEditorPanel extends StatelessWidget {
             controller: statusController,
             maxLength: 64,
             decoration: InputDecoration(
-              labelText: '状态文字',
+              labelText: '上方显示名称',
               helperText: '长度 $charCount / 64',
             ),
             onSubmitted: (_) => onSubmit(),
@@ -1322,6 +1341,16 @@ class _StatusEditorPanel extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
+            TextField(
+              controller: richPresenceStatusController,
+              maxLength: 128,
+              decoration: const InputDecoration(
+                labelText: '富文本状态内容',
+                helperText: '留空时使用上方显示名称',
+              ),
+              onSubmitted: (_) => onSubmit(),
+            ),
+            const SizedBox(height: 10),
             Wrap(
               spacing: 12,
               runSpacing: 12,
@@ -1339,7 +1368,7 @@ class _StatusEditorPanel extends StatelessWidget {
                   label: Text(loadingRpTokens ? '获取中...' : '从 AppID 获取 Tokens'),
                 ),
                 const Text(
-                  'Token 所需占位符会用状态文字自动填充。',
+                  'Token 所需占位符会用富文本状态内容填充。',
                   style: TextStyle(color: AppColors.muted),
                 ),
               ],

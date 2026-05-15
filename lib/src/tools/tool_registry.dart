@@ -36,7 +36,8 @@ const toolCategories = <ToolCategory>[
   ToolCategory(id: 'records', name: '记录', order: 1),
   ToolCategory(id: 'tasks', name: '任务', order: 2),
   ToolCategory(id: 'time', name: '时间', order: 3),
-  ToolCategory(id: 'utility', name: '实用', order: 4),
+  ToolCategory(id: 'network', name: '网络', order: 4),
+  ToolCategory(id: 'utility', name: '实用', order: 5),
 ];
 
 const toolDefinitions = <ToolDefinition>[
@@ -83,6 +84,24 @@ const toolDefinitions = <ToolDefinition>[
     description: '专注计时和会话记录',
     icon: Icons.timer_outlined,
     route: '/tools/pomodoro',
+    syncEnabled: true,
+  ),
+  ToolDefinition(
+    id: 'dnsLeak',
+    categoryId: 'network',
+    name: '检测DNS泄露',
+    description: '检测 DNS 出口、优选公共 DNS 并写入系统设置',
+    icon: Icons.dns_outlined,
+    route: '/tools/dnsLeak',
+    syncEnabled: false,
+  ),
+  ToolDefinition(
+    id: 'natTraversal',
+    categoryId: 'network',
+    name: 'NAT隧道打洞',
+    description: '检测 NAT 类型并管理 UDP/TCP 穿透转发',
+    icon: Icons.hub_outlined,
+    route: '/tools/natTraversal',
     syncEnabled: true,
   ),
   ToolDefinition(
