@@ -1,4 +1,4 @@
-name: Daily Windows Release
+name: Daily Multi-Platform Release
 
 on:
   schedule:
@@ -10,8 +10,17 @@ permissions:
   contents: write
 
 jobs:
-  build-and-release:
-    runs-on: windows-latest
+  build-windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+          - arch: arm64
+            runner: windows-11-arm
+
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - name: 检出代码
@@ -29,33 +38,204 @@ jobs:
       - name: 构建 Windows Release
         run: flutter build windows --release
 
-      - name: 打包 Release 产物
+      - name: 打包便携版
         shell: powershell
         run: |
-          $releaseDir = Join-Path $env:GITHUB_WORKSPACE 'build\windows\x64\runner\Release'
-          $archiveName = "personal_toolbox-windows-release-$env:GITHUB_RUN_NUMBER.zip"
-          $archivePath = Join-Path $env:GITHUB_WORKSPACE $archiveName
-          if (Test-Path $archivePath) {
-            Remove-Item $archivePath -Force
+          $arch = "${{ matrix.arch }}"
+          $releaseDir = Join-Path $env:GITHUB_WORKSPACE "build\windows\$arch\runner\Release"
+          $portableZip = Join-Path $env:GITHUB_WORKSPACE "personal_toolbox-windows-$arch-portable.zip"
+          if (Test-Path $portableZip) {
+            Remove-Item $portableZip -Force
           }
-          Compress-Archive -Path (Join-Path $releaseDir '*') -DestinationPath $archivePath -Force
-          [System.IO.File]::AppendAllText(
-            $env:GITHUB_ENV,
-            "ARCHIVE_PATH=$archivePath`n",
-            [System.Text.UTF8Encoding]::new($false)
-          )
+          Compress-Archive -Path (Join-Path $releaseDir '*') -DestinationPath $portableZip -Force
 
-      - name: 创建 GitHub Release
+      - name: 安装 Inno Setup
+        shell: powershell
+        run: choco install innosetup --no-progress -y
+
+      - name: 构建安装器
+        shell: powershell
+        run: |
+          $arch = "${{ matrix.arch }}"
+          $releaseDir = Join-Path $env:GITHUB_WORKSPACE "build\windows\$arch\runner\Release"
+          $installerDir = Join-Path $env:GITHUB_WORKSPACE "dist\windows\$arch"
+          New-Item -ItemType Directory -Force -Path $installerDir | Out-Null
+          $isccCandidates = @(
+            (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
+            (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe')
+          )
+          $iscc = $isccCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) {
+            throw '找不到 Inno Setup 编译器 ISCC.exe'
+          }
+          & $iscc `
+            "/DAppArch=$arch" `
+            "/DSourceDir=$releaseDir" `
+            "/DOutputDir=$installerDir" `
+            "/DAppVersion=${{ github.run_number }}" `
+            "/DAppBuild=${{ github.run_number }}" `
+            "/Fpersonal_toolbox-windows-$arch-setup" `
+            "$env:GITHUB_WORKSPACE\packaging\windows\personal_toolbox.iss"
+
+      - name: 上传 Windows 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}
+          path: |
+            personal_toolbox-windows-${{ matrix.arch }}-portable.zip
+            dist/windows/${{ matrix.arch }}/personal_toolbox-windows-${{ matrix.arch }}-setup.exe
+
+  build-linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Linux 依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
+
+      - name: 安装 Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: 获取依赖
+        run: flutter pub get
+
+      - name: 构建 Linux Release
+        run: |
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            flutter build linux --release --target-platform=linux-arm64
+          else
+            flutter build linux --release --target-platform=linux-x64
+          fi
+
+      - name: 打包 Linux 产物
+        run: |
+          tar -czf "personal_toolbox-linux-${{ matrix.arch }}.tar.gz" -C "build/linux/${{ matrix.arch }}/release/bundle" .
+
+      - name: 上传 Linux 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: personal_toolbox-linux-${{ matrix.arch }}.tar.gz
+
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: 获取依赖
+        run: flutter pub get
+
+      - name: 构建 Android 多架构 APK
+        run: flutter build apk --release --split-per-abi
+
+      - name: 构建 Android App Bundle
+        run: flutter build appbundle --release
+
+      - name: 上传 Android 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: |
+            build/app/outputs/flutter-apk/*.apk
+            build/app/outputs/bundle/release/app-release.aab
+
+  build-darwin:
+    runs-on: macos-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: 获取依赖
+        run: flutter pub get
+
+      - name: 构建 macOS Release
+        run: flutter build macos --release
+
+      - name: 打包 macOS 产物
+        run: ditto -c -k --keepParent build/macos/Build/Products/Release/personal_toolbox.app personal_toolbox-macos-arm64.zip
+
+      - name: 构建 iOS Release（arm64，无签名）
+        run: flutter build ios --release --no-codesign
+
+      - name: 打包 iOS 产物
+        run: ditto -c -k --keepParent build/ios/iphoneos/Runner.app personal_toolbox-ios-arm64.zip
+
+      - name: 上传 Darwin 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: darwin
+          path: |
+            personal_toolbox-macos-arm64.zip
+            personal_toolbox-ios-arm64.zip
+
+  publish-release:
+    runs-on: ubuntu-latest
+    needs:
+      - build-windows
+      - build-linux
+      - build-android
+      - build-darwin
+
+    steps:
+      - name: 下载所有平台产物
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: 发布 GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: "daily-${{ github.run_number }}"
           name: "每日构建 #${{ github.run_number }}"
           body: |
-            自动发布的每日构建包。
+            自动发布的多平台构建包。
 
-            - 构建平台：Windows
-            - 触发方式：定时任务
-            - 工作流运行号：${{ github.run_number }}
-            - 提交：${{ github.sha }}
-          files: ${{ env.ARCHIVE_PATH }}
+            包含平台：
+            - Windows x64 便携包
+            - Windows x64 安装包
+            - Windows arm64 便携包
+            - Windows arm64 安装包
+            - Linux x64
+            - Linux arm64
+            - Android split APK（armeabi-v7a / arm64-v8a / x86_64）
+            - Android App Bundle
+            - macOS arm64
+            - iOS arm64（无签名）
+
+            触发方式：定时任务
+            工作流运行号：${{ github.run_number }}
+            提交：${{ github.sha }}
+          files: release-assets/**
           generate_release_notes: true
