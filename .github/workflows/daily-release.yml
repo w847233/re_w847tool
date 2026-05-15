@@ -9,6 +9,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FLUTTER_VERSION: "3.41.9"
+
 jobs:
   build-windows:
     strategy:
@@ -30,6 +33,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
       - name: 获取依赖
@@ -110,6 +114,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
       - name: 获取依赖
@@ -144,6 +149,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
       - name: 获取依赖
@@ -174,6 +180,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
       - name: 获取依赖
