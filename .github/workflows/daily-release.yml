@@ -1,0 +1,61 @@
+name: Daily Windows Release
+
+on:
+  schedule:
+    # GitHub Actions 的 cron 使用 UTC；这里对应每天 12:00（Asia/Shanghai）
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: 获取依赖
+        run: flutter pub get
+
+      - name: 构建 Windows Release
+        run: flutter build windows --release
+
+      - name: 打包 Release 产物
+        shell: powershell
+        run: |
+          $releaseDir = Join-Path $env:GITHUB_WORKSPACE 'build\windows\x64\runner\Release'
+          $archiveName = "personal_toolbox-windows-release-$env:GITHUB_RUN_NUMBER.zip"
+          $archivePath = Join-Path $env:GITHUB_WORKSPACE $archiveName
+          if (Test-Path $archivePath) {
+            Remove-Item $archivePath -Force
+          }
+          Compress-Archive -Path (Join-Path $releaseDir '*') -DestinationPath $archivePath -Force
+          [System.IO.File]::AppendAllText(
+            $env:GITHUB_ENV,
+            "ARCHIVE_PATH=$archivePath`n",
+            [System.Text.UTF8Encoding]::new($false)
+          )
+
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "daily-${{ github.run_number }}"
+          name: "每日构建 #${{ github.run_number }}"
+          body: |
+            自动发布的每日构建包。
+
+            - 构建平台：Windows
+            - 触发方式：定时任务
+            - 工作流运行号：${{ github.run_number }}
+            - 提交：${{ github.sha }}
+          files: ${{ env.ARCHIVE_PATH }}
+          generate_release_notes: true
