@@ -1,8 +1,8 @@
 # 个人工具箱
 
-一个以 Windows 桌面为优先目标的 Flutter 工具箱项目，聚合了日常记录、时间管理、网络诊断与实用小工具，并在本地 SQLite 基础上提供加密 WebDAV 同步能力。
+一个以 Windows 桌面为优先目标的 Flutter 工具箱项目，聚合了日常记录、时间管理、网络诊断、手机协同与实用小工具，并在本地 SQLite 基础上提供加密 WebDAV 同步能力。
 
-当前仓库保留了 Android、iOS、macOS、Linux 与 Windows 工程，但从代码实现和脚本配置来看，开发与交付重点是 Windows 桌面端。
+当前仓库保留了 Android、iOS、macOS、Linux 与 Windows 工程，但从代码实现和脚本配置来看，开发与交付重点仍是 Windows 桌面端，同时包含用于手机管理的 Android 伴随端。
 
 ## 项目定位
 
@@ -11,7 +11,7 @@
 - 本地优先：数据默认落地到本机 SQLite。
 - 可同步：支持把本地快照加密后上传到 WebDAV。
 - 中文体验优先：界面语言、日期格式和文案都以简体中文为主。
-- Windows 能力增强：包含 DNS 设置、NAT 打洞、系统控制、Windows 原生网络通道等能力。
+- Windows 能力增强：包含蓝牙音频、Android 伴随端协作、DNS 设置、NAT 打洞、系统控制、Windows 原生网络通道等能力。
 - 混合实现：主界面使用 Flutter/Dart，`Steam 状态`工具内置 Python 侧车服务。
 
 ## 功能概览
@@ -36,6 +36,10 @@
 ### 媒体
 
 - `蓝牙音频转换`：将手机蓝牙音频转接到 Windows 当前默认播放设备。
+
+### 手机协同
+
+- `手机管理`：在 Windows 管理端和 Android 伴随端之间协作，支持蓝牙音频、媒体、通讯录、消息、通话记录、文件选择与传输、远程输入和诊断。
 
 ### 系统
 
@@ -83,6 +87,7 @@
 - 首次进入 `Steam 状态`工具页时，程序会释放内置后端脚本，创建虚拟环境，并尝试根据 `assets/steam_status_backend/requirements.txt` 自动安装依赖。
 - `检测DNS泄露` 与部分网络能力涉及本机系统网络设置，实际效果受当前操作系统权限与运行环境限制。
 - `NAT隧道打洞` 的 TCP 能力依赖 Windows 原生通道支持；如果当前运行环境未加载原生模块，界面会显示受限提示。
+- `手机管理` 需要 Windows 管理端与 Android 伴随端共同工作；Android 端需要开启蓝牙，并授予蓝牙、通讯录、短信、通话记录等权限。
 - `系统控制` 依赖 Windows 原生通道；一键熄屏只关闭显示器，不会锁屏、睡眠或关闭程序。
 
 ## 快速开始
@@ -177,6 +182,7 @@ build\windows\x64\runner\Release
 - 远端路径固定为 `personal-toolbox/state.v1.enc.json`。
 - 同步前会先导出本地快照，再使用 `AES-256-GCM + PBKDF2-HMAC-SHA256` 进行加密。
 - 冲突处理以记录更新时间为准，较新的数据覆盖较旧数据。
+- `NAT隧道打洞`、`Get Token` 和 `Steam 状态` 工具中的可同步状态会参与同步。
 - `Steam 状态`工具中的预设与历史会参与同步。
 - `Steam` 账号凭证不会进入同步快照，只保存在本机。
 
@@ -186,6 +192,7 @@ build\windows\x64\runner\Release
 
 - `检测DNS泄露`
 - `蓝牙音频转换`
+- `手机管理`
 - `系统控制`
 - `单位换算`
 - `密码生成`
@@ -205,17 +212,20 @@ lib/
     sync/                      WebDAV 同步与加密
     bluetooth_audio/           蓝牙音频转接能力
     get_token/                 token 使用情况采集工具
+    phone_manager/             手机管理与 Android 伴随端能力
     network/                   DNS / NAT 相关能力
     system_control/            Windows 系统控制能力
     steam_status/              Steam 状态工具与侧车控制
     ledger/                    账单导入等业务逻辑
     home/                      主页布局与小组件定义
+android/                      Android 伴随端入口与权限声明
 assets/
   fonts/                       HarmonyOS Sans SC 字体与许可证
   steam_status_backend/        内置 Python 侧车脚本
 test/                          关键业务与界面测试
-windows/                       Windows Runner 与原生网络通道
+windows/                       Windows Runner 与原生网络、蓝牙、手机和系统通道
 run.bat                        Windows 开发启动脚本
+run_debug_msix.bat             Windows Debug 包身份启动脚本
 build.bat                      Windows 发布构建脚本
 ```
 
