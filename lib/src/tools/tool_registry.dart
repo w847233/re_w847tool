@@ -37,7 +37,9 @@ const toolCategories = <ToolCategory>[
   ToolCategory(id: 'tasks', name: '任务', order: 2),
   ToolCategory(id: 'time', name: '时间', order: 3),
   ToolCategory(id: 'network', name: '网络', order: 4),
-  ToolCategory(id: 'utility', name: '实用', order: 5),
+  ToolCategory(id: 'media', name: '媒体', order: 5),
+  ToolCategory(id: 'system', name: '系统', order: 6),
+  ToolCategory(id: 'utility', name: '实用', order: 7),
 ];
 
 const toolDefinitions = <ToolDefinition>[
@@ -105,6 +107,24 @@ const toolDefinitions = <ToolDefinition>[
     syncEnabled: true,
   ),
   ToolDefinition(
+    id: 'phoneManager',
+    categoryId: 'media',
+    name: '手机管理',
+    description: '管理 Android 蓝牙音频、媒体、通讯录、消息和伴随服务',
+    icon: Icons.phone_android_outlined,
+    route: '/tools/phoneManager',
+    syncEnabled: false,
+  ),
+  ToolDefinition(
+    id: 'systemControl',
+    categoryId: 'system',
+    name: '系统控制',
+    description: 'Windows 专属系统快捷操作',
+    icon: Icons.desktop_windows_outlined,
+    route: '/tools/systemControl',
+    syncEnabled: false,
+  ),
+  ToolDefinition(
     id: 'converter',
     categoryId: 'utility',
     name: '单位换算',
@@ -123,6 +143,15 @@ const toolDefinitions = <ToolDefinition>[
     syncEnabled: false,
   ),
   ToolDefinition(
+    id: 'getToken',
+    categoryId: 'utility',
+    name: 'Get Token',
+    description: '采集凭证额度并汇总 token 使用情况',
+    icon: Icons.token_outlined,
+    route: '/tools/getToken',
+    syncEnabled: true,
+  ),
+  ToolDefinition(
     id: 'steamStatus',
     categoryId: 'utility',
     name: 'Steam 状态',
@@ -134,6 +163,9 @@ const toolDefinitions = <ToolDefinition>[
 ];
 
 ToolDefinition toolById(String id) {
+  if (id == 'bluetoothAudio') {
+    return toolDefinitions.firstWhere((tool) => tool.id == 'phoneManager');
+  }
   return toolDefinitions.firstWhere(
     (tool) => tool.id == id,
     orElse: () => toolDefinitions.first,

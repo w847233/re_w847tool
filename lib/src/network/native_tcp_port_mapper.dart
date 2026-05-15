@@ -3,6 +3,23 @@ import 'package:flutter/services.dart';
 class NativeTcpPortMapper {
   static const _channel = MethodChannel('personal_toolbox/nat_traversal');
 
+  Future<NativeTcpProbeResult> probeStun({
+    required String stunHost,
+    required int stunPort,
+  }) async {
+    final result = await _channel.invokeMapMethod<String, Object?>(
+      'probeTcpStun',
+      <String, Object?>{'stunHost': stunHost, 'stunPort': stunPort},
+    );
+    if (result == null) {
+      throw StateError('原生 TCP STUN 探测没有返回结果。');
+    }
+    return NativeTcpProbeResult(
+      publicIp: result['publicIp'] as String? ?? '',
+      publicPort: result['publicPort'] as int? ?? 0,
+    );
+  }
+
   Future<NativeTcpMappingResult> startForward({
     required String ruleId,
     required String stunHost,
@@ -51,4 +68,14 @@ class NativeTcpMappingResult {
   final String publicIp;
   final int publicPort;
   final int localBindPort;
+}
+
+class NativeTcpProbeResult {
+  const NativeTcpProbeResult({
+    required this.publicIp,
+    required this.publicPort,
+  });
+
+  final String publicIp;
+  final int publicPort;
 }

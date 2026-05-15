@@ -8,6 +8,8 @@ import 'package:uuid/uuid.dart';
 
 part 'app_database.g.dart';
 
+const localOnlySettingPrefix = 'localOnly.';
+
 class AppSettings extends Table {
   TextColumn get key => text()();
   TextColumn get value => text()();
@@ -135,6 +137,102 @@ class SteamStatusHistoryRecords extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+@DataClassName('GetTokenCredentialSnapshotRecord')
+class GetTokenCredentialSnapshotRecords extends Table {
+  @override
+  String get tableName => 'get_token_credential_snapshots';
+
+  TextColumn get id => text()();
+  TextColumn get email => text()();
+  TextColumn get authIndex => text().nullable()();
+  TextColumn get accountId => text().nullable()();
+  TextColumn get planType => text().nullable()();
+  TextColumn get credentialName => text().named('credential_name').nullable()();
+  TextColumn get status => text()();
+  RealColumn get usedPercent => real().nullable()();
+  RealColumn get remainingPercent => real().nullable()();
+  BoolColumn get limitReached => boolean().nullable()();
+  TextColumn get error => text().nullable()();
+  DateTimeColumn get resetAt => dateTime().nullable()();
+  IntColumn get resetAfterSeconds => integer().nullable()();
+  IntColumn get limitWindowSeconds => integer().nullable()();
+  TextColumn get rawJson => text().nullable()();
+  BoolColumn get lastSuccessPreserved =>
+      boolean().withDefault(const Constant(false))();
+  DateTimeColumn get updatedAt => dateTime()();
+  TextColumn get deviceId => text()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DataClassName('GetTokenCollectionStateRecord')
+class GetTokenCollectionStateRecords extends Table {
+  @override
+  String get tableName => 'get_token_collection_states';
+
+  TextColumn get id => text()();
+  TextColumn get status => text()();
+  TextColumn get message => text()();
+  IntColumn get processed => integer()();
+  IntColumn get total => integer()();
+  RealColumn get progressPercent => real()();
+  TextColumn get summaryJson => text().nullable()();
+  TextColumn get credentialChangesJson => text().nullable()();
+  TextColumn get refreshStatsJson => text().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+  DateTimeColumn get completedAt => dateTime().nullable()();
+  TextColumn get deviceId => text()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DataClassName('GetTokenUsageEventRecord')
+class GetTokenUsageEventRecords extends Table {
+  @override
+  String get tableName => 'get_token_usage_events';
+
+  TextColumn get id => text()();
+  TextColumn get authIndex => text()();
+  TextColumn get source => text()();
+  TextColumn get sourceType => text().nullable()();
+  BoolColumn get failed => boolean().withDefault(const Constant(false))();
+  TextColumn get model => text().nullable()();
+  DateTimeColumn get timestamp => dateTime()();
+  IntColumn get inputTokens => integer().withDefault(const Constant(0))();
+  IntColumn get outputTokens => integer().withDefault(const Constant(0))();
+  IntColumn get reasoningTokens => integer().withDefault(const Constant(0))();
+  IntColumn get cachedTokens => integer().withDefault(const Constant(0))();
+  IntColumn get totalTokens => integer().withDefault(const Constant(0))();
+  TextColumn get rawJson => text()();
+  DateTimeColumn get updatedAt => dateTime()();
+  TextColumn get deviceId => text()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DataClassName('GetTokenUsageQueryStateRecord')
+class GetTokenUsageQueryStateRecords extends Table {
+  @override
+  String get tableName => 'get_token_usage_query_states';
+
+  TextColumn get id => text()();
+  TextColumn get paramsJson => text()();
+  TextColumn get summaryJson => text()();
+  TextColumn get upstreamJson => text()();
+  TextColumn get rowsJson => text()();
+  IntColumn get eventTableCount => integer()();
+  IntColumn get addedEventCount => integer()();
+  DateTimeColumn get updatedAt => dateTime()();
+  TextColumn get deviceId => text()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 @DriftDatabase(
   tables: [
     AppSettings,
@@ -146,15 +244,20 @@ class SteamStatusHistoryRecords extends Table {
     PomodoroSettings,
     SteamStatusPresetRecords,
     SteamStatusHistoryRecords,
+    GetTokenCredentialSnapshotRecords,
+    GetTokenCollectionStateRecords,
+    GetTokenUsageEventRecords,
+    GetTokenUsageQueryStateRecords,
   ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   static const _uuid = Uuid();
+  static const getTokenUsageRetentionDays = 90;
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -163,6 +266,12 @@ class AppDatabase extends _$AppDatabase {
       if (from < 2) {
         await migrator.createTable(steamStatusPresetRecords);
         await migrator.createTable(steamStatusHistoryRecords);
+      }
+      if (from < 3) {
+        await migrator.createTable(getTokenCredentialSnapshotRecords);
+        await migrator.createTable(getTokenCollectionStateRecords);
+        await migrator.createTable(getTokenUsageEventRecords);
+        await migrator.createTable(getTokenUsageQueryStateRecords);
       }
     },
   );
@@ -594,15 +703,118 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
+  Stream<List<GetTokenCredentialSnapshotRecord>>
+  watchGetTokenCredentialSnapshots() {
+    return (select(getTokenCredentialSnapshotRecords)..orderBy([
+          (row) => OrderingTerm.asc(row.status),
+          (row) => OrderingTerm.asc(row.email),
+        ]))
+        .watch();
+  }
+
+  Future<List<GetTokenCredentialSnapshotRecord>>
+  loadGetTokenCredentialSnapshots() {
+    return (select(getTokenCredentialSnapshotRecords)..orderBy([
+          (row) => OrderingTerm.asc(row.status),
+          (row) => OrderingTerm.asc(row.email),
+        ]))
+        .get();
+  }
+
+  Future<void> replaceGetTokenCredentialSnapshots(
+    List<GetTokenCredentialSnapshotRecord> rows,
+  ) async {
+    await transaction(() async {
+      await delete(getTokenCredentialSnapshotRecords).go();
+      if (rows.isEmpty) {
+        return;
+      }
+      await batch((batch) {
+        batch.insertAll(
+          getTokenCredentialSnapshotRecords,
+          rows,
+          mode: InsertMode.insertOrReplace,
+        );
+      });
+    });
+  }
+
+  Stream<GetTokenCollectionStateRecord?> watchGetTokenCollectionStateRecord() {
+    final query = select(getTokenCollectionStateRecords)
+      ..where((row) => row.id.equals('latest'));
+    return query.watchSingleOrNull();
+  }
+
+  Future<GetTokenCollectionStateRecord?> loadGetTokenCollectionStateRecord() {
+    final query = select(getTokenCollectionStateRecords)
+      ..where((row) => row.id.equals('latest'));
+    return query.getSingleOrNull();
+  }
+
+  Future<void> saveGetTokenCollectionStateRecord(
+    GetTokenCollectionStateRecord row,
+  ) {
+    return into(getTokenCollectionStateRecords).insertOnConflictUpdate(row);
+  }
+
+  Future<GetTokenUsageQueryStateRecord?> loadGetTokenUsageQueryStateRecord() {
+    final query = select(getTokenUsageQueryStateRecords)
+      ..where((row) => row.id.equals('latest'));
+    return query.getSingleOrNull();
+  }
+
+  Future<void> saveGetTokenUsageQueryStateRecord(
+    GetTokenUsageQueryStateRecord row,
+  ) {
+    return into(getTokenUsageQueryStateRecords).insertOnConflictUpdate(row);
+  }
+
+  Future<void> clearGetTokenUsageCache() async {
+    await transaction(() async {
+      await (delete(
+        getTokenUsageQueryStateRecords,
+      )..where((row) => row.id.equals('latest'))).go();
+      await delete(getTokenUsageEventRecords).go();
+    });
+  }
+
+  Future<List<GetTokenUsageEventRecord>> loadGetTokenUsageEvents() {
+    return (select(
+      getTokenUsageEventRecords,
+    )..orderBy([(row) => OrderingTerm.desc(row.timestamp)])).get();
+  }
+
+  Future<void> mergeGetTokenUsageEvents(
+    List<GetTokenUsageEventRecord> rows, {
+    Duration retention = const Duration(days: getTokenUsageRetentionDays),
+  }) async {
+    final cutoff = DateTime.now().toUtc().subtract(retention);
+    await transaction(() async {
+      if (rows.isNotEmpty) {
+        await batch((batch) {
+          batch.insertAll(
+            getTokenUsageEventRecords,
+            rows,
+            mode: InsertMode.insertOrReplace,
+          );
+        });
+      }
+      await (delete(
+        getTokenUsageEventRecords,
+      )..where((row) => row.timestamp.isSmallerThanValue(cutoff))).go();
+    });
+  }
+
   Future<Map<String, dynamic>> exportPlainSnapshot() async {
     final deviceId = await ensureDeviceId();
     return <String, dynamic>{
       'schemaVersion': schemaVersion,
       'updatedAt': DateTime.now().toUtc().toIso8601String(),
       'deviceId': deviceId,
-      'settings': (await select(
-        appSettings,
-      ).get()).map(_settingToJson).toList(),
+      'settings': (await select(appSettings).get())
+          .where((row) => _isSyncableSettingKey(row.key))
+          .map(_settingToJson)
+          .toList(),
       'notes': (await select(notes).get()).map(_noteToJson).toList(),
       'todos': (await select(todos).get()).map(_todoToJson).toList(),
       'ledgerEntries': (await select(
@@ -623,6 +835,18 @@ class AppDatabase extends _$AppDatabase {
       'steamStatusHistoryEntries': (await select(
         steamStatusHistoryRecords,
       ).get()).map(_steamStatusHistoryEntryToJson).toList(),
+      'getTokenCredentialSnapshots': (await select(
+        getTokenCredentialSnapshotRecords,
+      ).get()).map(_getTokenCredentialSnapshotToJson).toList(),
+      'getTokenCollectionStates': (await select(
+        getTokenCollectionStateRecords,
+      ).get()).map(_getTokenCollectionStateToJson).toList(),
+      'getTokenUsageEvents': (await select(
+        getTokenUsageEventRecords,
+      ).get()).map(_getTokenUsageEventToJson).toList(),
+      'getTokenUsageQueryStates': (await select(
+        getTokenUsageQueryStateRecords,
+      ).get()).map(_getTokenUsageQueryStateToJson).toList(),
     };
   }
 
@@ -639,13 +863,25 @@ class AppDatabase extends _$AppDatabase {
       await _importSteamStatusHistoryEntries(
         _list(snapshot['steamStatusHistoryEntries']),
       );
+      await _importGetTokenCollectionState(
+        _list(snapshot['getTokenCollectionStates']),
+        _list(snapshot['getTokenCredentialSnapshots']),
+      );
+      await _importGetTokenUsageEvents(_list(snapshot['getTokenUsageEvents']));
+      await _importGetTokenUsageQueryStates(
+        _list(snapshot['getTokenUsageQueryStates']),
+      );
     });
   }
 
   Future<void> _importSettings(List<Map<String, dynamic>> rows) async {
     for (final row in rows) {
+      final key = row['key'] as String;
+      if (!_isSyncableSettingKey(key)) {
+        continue;
+      }
       final incoming = AppSetting(
-        key: row['key'] as String,
+        key: key,
         value: row['value'] as String? ?? '',
         updatedAt: _date(row['updatedAt']),
         deviceId: row['deviceId'] as String? ?? 'remote',
@@ -825,6 +1061,127 @@ class AppDatabase extends _$AppDatabase {
       }
     }
   }
+
+  Future<void> _importGetTokenCollectionState(
+    List<Map<String, dynamic>> collectionRows,
+    List<Map<String, dynamic>> credentialRows,
+  ) async {
+    if (collectionRows.isEmpty) {
+      return;
+    }
+    final incomingStates =
+        collectionRows
+            .map(
+              (row) => GetTokenCollectionStateRecord(
+                id: row['id'] as String,
+                status: row['status'] as String? ?? 'completed',
+                message: row['message'] as String? ?? '',
+                processed: row['processed'] as int? ?? 0,
+                total: row['total'] as int? ?? 0,
+                progressPercent: (row['progressPercent'] as num? ?? 0)
+                    .toDouble(),
+                summaryJson: row['summaryJson'] as String?,
+                credentialChangesJson: row['credentialChangesJson'] as String?,
+                refreshStatsJson: row['refreshStatsJson'] as String?,
+                createdAt: _date(row['createdAt']),
+                updatedAt: _date(row['updatedAt']),
+                completedAt: _nullableDate(row['completedAt']),
+                deviceId: row['deviceId'] as String? ?? 'remote',
+              ),
+            )
+            .toList()
+          ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    final incoming = incomingStates.first;
+    final local = await loadGetTokenCollectionStateRecord();
+    if (local != null && incoming.updatedAt.isBefore(local.updatedAt)) {
+      return;
+    }
+    final incomingCredentials = credentialRows
+        .map(
+          (row) => GetTokenCredentialSnapshotRecord(
+            id: row['id'] as String,
+            email: row['email'] as String? ?? 'unknown',
+            authIndex: row['authIndex'] as String?,
+            accountId: row['accountId'] as String?,
+            planType: row['planType'] as String?,
+            credentialName: row['credentialName'] as String?,
+            status: row['status'] as String? ?? 'failed',
+            usedPercent: (row['usedPercent'] as num?)?.toDouble(),
+            remainingPercent: (row['remainingPercent'] as num?)?.toDouble(),
+            limitReached: row['limitReached'] as bool?,
+            error: row['error'] as String?,
+            resetAt: _nullableDate(row['resetAt']),
+            resetAfterSeconds: row['resetAfterSeconds'] as int?,
+            limitWindowSeconds: row['limitWindowSeconds'] as int?,
+            rawJson: row['rawJson'] as String?,
+            lastSuccessPreserved: row['lastSuccessPreserved'] as bool? ?? false,
+            updatedAt: _date(row['updatedAt']),
+            deviceId: row['deviceId'] as String? ?? 'remote',
+          ),
+        )
+        .toList();
+    await replaceGetTokenCredentialSnapshots(incomingCredentials);
+    await saveGetTokenCollectionStateRecord(incoming);
+  }
+
+  Future<void> _importGetTokenUsageEvents(
+    List<Map<String, dynamic>> rows,
+  ) async {
+    if (rows.isEmpty) {
+      return;
+    }
+    final incoming = rows.map((row) {
+      return GetTokenUsageEventRecord(
+        id: row['id'] as String,
+        authIndex: row['authIndex'] as String? ?? '',
+        source: row['source'] as String? ?? 'unknown',
+        sourceType: row['sourceType'] as String?,
+        failed: row['failed'] as bool? ?? false,
+        model: row['model'] as String?,
+        timestamp: _date(row['timestamp']),
+        inputTokens: row['inputTokens'] as int? ?? 0,
+        outputTokens: row['outputTokens'] as int? ?? 0,
+        reasoningTokens: row['reasoningTokens'] as int? ?? 0,
+        cachedTokens: row['cachedTokens'] as int? ?? 0,
+        totalTokens: row['totalTokens'] as int? ?? 0,
+        rawJson: row['rawJson'] as String? ?? '{}',
+        updatedAt: _date(row['updatedAt']),
+        deviceId: row['deviceId'] as String? ?? 'remote',
+      );
+    }).toList();
+    await mergeGetTokenUsageEvents(incoming);
+  }
+
+  Future<void> _importGetTokenUsageQueryStates(
+    List<Map<String, dynamic>> rows,
+  ) async {
+    if (rows.isEmpty) {
+      return;
+    }
+    final incomingStates =
+        rows
+            .map(
+              (row) => GetTokenUsageQueryStateRecord(
+                id: row['id'] as String,
+                paramsJson: row['paramsJson'] as String? ?? '{}',
+                summaryJson: row['summaryJson'] as String? ?? '{}',
+                upstreamJson: row['upstreamJson'] as String? ?? '{}',
+                rowsJson: row['rowsJson'] as String? ?? '[]',
+                eventTableCount: row['eventTableCount'] as int? ?? 0,
+                addedEventCount: row['addedEventCount'] as int? ?? 0,
+                updatedAt: _date(row['updatedAt']),
+                deviceId: row['deviceId'] as String? ?? 'remote',
+              ),
+            )
+            .toList()
+          ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    final incoming = incomingStates.first;
+    final local = await loadGetTokenUsageQueryStateRecord();
+    if (local != null && incoming.updatedAt.isBefore(local.updatedAt)) {
+      return;
+    }
+    await saveGetTokenUsageQueryStateRecord(incoming);
+  }
 }
 
 LazyDatabase _openConnection() {
@@ -861,6 +1218,10 @@ List<Map<String, dynamic>> _list(Object? value) {
       .whereType<Map>()
       .map((row) => Map<String, dynamic>.from(row))
       .toList();
+}
+
+bool _isSyncableSettingKey(String key) {
+  return !key.startsWith(localOnlySettingPrefix);
 }
 
 String? _normalizedRichText(String? value) {
@@ -957,5 +1318,79 @@ Map<String, dynamic> _steamStatusHistoryEntryToJson(
   'createdAt': row.createdAt.toUtc().toIso8601String(),
   'updatedAt': row.updatedAt.toUtc().toIso8601String(),
   'deletedAt': row.deletedAt?.toUtc().toIso8601String(),
+  'deviceId': row.deviceId,
+};
+
+Map<String, dynamic> _getTokenCredentialSnapshotToJson(
+  GetTokenCredentialSnapshotRecord row,
+) => {
+  'id': row.id,
+  'email': row.email,
+  'authIndex': row.authIndex,
+  'accountId': row.accountId,
+  'planType': row.planType,
+  'credentialName': row.credentialName,
+  'status': row.status,
+  'usedPercent': row.usedPercent,
+  'remainingPercent': row.remainingPercent,
+  'limitReached': row.limitReached,
+  'error': row.error,
+  'resetAt': row.resetAt?.toUtc().toIso8601String(),
+  'resetAfterSeconds': row.resetAfterSeconds,
+  'limitWindowSeconds': row.limitWindowSeconds,
+  'rawJson': row.rawJson,
+  'lastSuccessPreserved': row.lastSuccessPreserved,
+  'updatedAt': row.updatedAt.toUtc().toIso8601String(),
+  'deviceId': row.deviceId,
+};
+
+Map<String, dynamic> _getTokenCollectionStateToJson(
+  GetTokenCollectionStateRecord row,
+) => {
+  'id': row.id,
+  'status': row.status,
+  'message': row.message,
+  'processed': row.processed,
+  'total': row.total,
+  'progressPercent': row.progressPercent,
+  'summaryJson': row.summaryJson,
+  'credentialChangesJson': row.credentialChangesJson,
+  'refreshStatsJson': row.refreshStatsJson,
+  'createdAt': row.createdAt.toUtc().toIso8601String(),
+  'updatedAt': row.updatedAt.toUtc().toIso8601String(),
+  'completedAt': row.completedAt?.toUtc().toIso8601String(),
+  'deviceId': row.deviceId,
+};
+
+Map<String, dynamic> _getTokenUsageEventToJson(GetTokenUsageEventRecord row) =>
+    {
+      'id': row.id,
+      'authIndex': row.authIndex,
+      'source': row.source,
+      'sourceType': row.sourceType,
+      'failed': row.failed,
+      'model': row.model,
+      'timestamp': row.timestamp.toUtc().toIso8601String(),
+      'inputTokens': row.inputTokens,
+      'outputTokens': row.outputTokens,
+      'reasoningTokens': row.reasoningTokens,
+      'cachedTokens': row.cachedTokens,
+      'totalTokens': row.totalTokens,
+      'rawJson': row.rawJson,
+      'updatedAt': row.updatedAt.toUtc().toIso8601String(),
+      'deviceId': row.deviceId,
+    };
+
+Map<String, dynamic> _getTokenUsageQueryStateToJson(
+  GetTokenUsageQueryStateRecord row,
+) => {
+  'id': row.id,
+  'paramsJson': row.paramsJson,
+  'summaryJson': row.summaryJson,
+  'upstreamJson': row.upstreamJson,
+  'rowsJson': row.rowsJson,
+  'eventTableCount': row.eventTableCount,
+  'addedEventCount': row.addedEventCount,
+  'updatedAt': row.updatedAt.toUtc().toIso8601String(),
   'deviceId': row.deviceId,
 };

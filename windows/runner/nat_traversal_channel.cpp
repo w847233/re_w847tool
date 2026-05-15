@@ -33,6 +33,13 @@ struct MappingStartResult {
   int local_bind_port = 0;
 };
 
+struct TcpProbeResult {
+  bool ok = false;
+  std::string error;
+  std::string public_ip;
+  int public_port = 0;
+};
+
 std::once_flag g_wsa_once;
 
 void EnsureWinsock() {
@@ -273,6 +280,54 @@ std::optional<std::pair<std::string, int>> PerformTcpStun(SOCKET socket) {
     return std::nullopt;
   }
   return ParseStunMappedAddress(header, body);
+}
+
+TcpProbeResult ProbeTcpStun(const std::string& stun_host, int stun_port) {
+  EnsureWinsock();
+
+  const auto stun_address = ResolveIpv4(stun_host, stun_port);
+  if (!stun_address.has_value()) {
+    TcpProbeResult result;
+    result.ok = false;
+    result.error = "resolve_stun_failed: " + stun_host;
+    return result;
+  }
+
+  SOCKET stun_socket = CreateReusableTcpSocket();
+  if (stun_socket == INVALID_SOCKET) {
+    TcpProbeResult result;
+    result.ok = false;
+    result.error = LastSocketError("create_tcp_stun_socket_failed");
+    return result;
+  }
+
+  int socket_error = 0;
+  if (!ConnectWithTimeout(stun_socket, *stun_address, kConnectTimeoutMs,
+                          &socket_error)) {
+    CloseSocket(stun_socket);
+    std::ostringstream stream;
+    stream << "connect_tcp_stun_failed, WSA error " << socket_error;
+    TcpProbeResult result;
+    result.ok = false;
+    result.error = stream.str();
+    return result;
+  }
+
+  SetSocketTimeouts(stun_socket, kConnectTimeoutMs);
+  const auto public_endpoint = PerformTcpStun(stun_socket);
+  CloseSocket(stun_socket);
+  if (!public_endpoint.has_value()) {
+    TcpProbeResult result;
+    result.ok = false;
+    result.error = "tcp_stun_response_has_no_mapped_address";
+    return result;
+  }
+
+  TcpProbeResult result;
+  result.ok = true;
+  result.public_ip = public_endpoint->first;
+  result.public_port = public_endpoint->second;
+  return result;
 }
 
 std::string GetStringArg(const flutter::EncodableMap& args,
@@ -579,6 +634,10 @@ class NatTraversalChannel::Impl {
       StartTcpForward(call, std::move(result));
       return;
     }
+    if (call.method_name() == "probeTcpStun") {
+      ProbeTcpStun(call, std::move(result));
+      return;
+    }
     if (call.method_name() == "stopTcpForward") {
       StopTcpForward(call, std::move(result));
       return;
@@ -669,6 +728,34 @@ class NatTraversalChannel::Impl {
               flutter::EncodableValue(start.public_port);
           value[flutter::EncodableValue("localBindPort")] =
               flutter::EncodableValue(start.local_bind_port);
+          result->Success(flutter::EncodableValue(value));
+        }));
+  }
+
+  void ProbeTcpStun(
+      const flutter::MethodCall<flutter::EncodableValue>& call,
+      std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+    const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+    if (args == nullptr) {
+      result->Error("bad_args", "probe_tcp_stun_missing_args");
+      return;
+    }
+
+    const std::string stun_host = GetStringArg(*args, "stunHost");
+    const int stun_port = GetIntArg(*args, "stunPort", 3478);
+    RunWorker(std::thread(
+        [stun_host, stun_port, result = std::move(result)]() mutable {
+          TcpProbeResult probe = ::ProbeTcpStun(stun_host, stun_port);
+          if (!probe.ok) {
+            result->Error("probe_failed", probe.error);
+            return;
+          }
+
+          flutter::EncodableMap value;
+          value[flutter::EncodableValue("publicIp")] =
+              flutter::EncodableValue(probe.public_ip);
+          value[flutter::EncodableValue("publicPort")] =
+              flutter::EncodableValue(probe.public_port);
           result->Success(flutter::EncodableValue(value));
         }));
   }

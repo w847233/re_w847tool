@@ -1,8 +1,15 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart';
+
+final webDavClientProvider = Provider<WebDavClient>((ref) {
+  final client = WebDavClient();
+  ref.onDispose(client.close);
+  return client;
+});
 
 class WebDavConfig {
   const WebDavConfig({
@@ -32,6 +39,10 @@ class WebDavClient {
   WebDavClient({http.Client? client}) : _client = client ?? http.Client();
 
   final http.Client _client;
+
+  void close() {
+    _client.close();
+  }
 
   Future<bool> testConnection(WebDavConfig config) async {
     final request = http.Request('PROPFIND', _resolve(config, ''));

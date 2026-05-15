@@ -132,3 +132,12 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+msix_config:
+  display_name: 个人工具箱
+  publisher_display_name: w847
+  identity_name: com.w847.personaltoolbox
+  msix_version: 1.0.0.0
+  capabilities: internetClient, privateNetworkClientServer, bluetooth, globalMediaControl, phoneLineTransportManagement
+  os_min_version: 10.0.19041.0
+  store: false

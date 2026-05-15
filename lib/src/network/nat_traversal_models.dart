@@ -20,38 +20,37 @@ enum NatTunnelStatus { saved, starting, active, warning, failed, stopped }
 
 class NatTraversalConfig {
   const NatTraversalConfig({
-    this.stunServer = defaultStunServer,
-    this.tcpStunServer = defaultTcpStunServer,
+    this.stunServers = defaultStunServers,
     this.turnServer = '',
     this.turnUsername = '',
     this.turnPassword = '',
     this.tcpKeepAliveServer = defaultTcpKeepAliveServer,
   });
 
-  static const defaultStunServer = 'stun.l.google.com:19302';
-  static const defaultTcpStunServer = 'stun.nextcloud.com:443';
+  static const defaultStunServers = <String>[
+    'stun.l.google.com:19302',
+    'stun.nextcloud.com:443',
+  ];
   static const defaultTcpKeepAliveServer = 'example.com:80';
 
-  final String stunServer;
-  final String tcpStunServer;
+  final List<String> stunServers;
   final String turnServer;
   final String turnUsername;
   final String turnPassword;
   final String tcpKeepAliveServer;
 
   bool get hasTurnServer => turnServer.trim().isNotEmpty;
+  bool get hasStunServers => stunServers.isNotEmpty;
 
   NatTraversalConfig copyWith({
-    String? stunServer,
-    String? tcpStunServer,
+    List<String>? stunServers,
     String? turnServer,
     String? turnUsername,
     String? turnPassword,
     String? tcpKeepAliveServer,
   }) {
     return NatTraversalConfig(
-      stunServer: stunServer ?? this.stunServer,
-      tcpStunServer: tcpStunServer ?? this.tcpStunServer,
+      stunServers: stunServers ?? this.stunServers,
       turnServer: turnServer ?? this.turnServer,
       turnUsername: turnUsername ?? this.turnUsername,
       turnPassword: turnPassword ?? this.turnPassword,
@@ -61,8 +60,7 @@ class NatTraversalConfig {
 
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
-      'stunServer': stunServer,
-      'tcpStunServer': tcpStunServer,
+      'stunServers': stunServers,
       'turnServer': turnServer,
       'turnUsername': turnUsername,
       'turnPassword': turnPassword,
@@ -71,14 +69,13 @@ class NatTraversalConfig {
   }
 
   factory NatTraversalConfig.fromJson(Map<String, dynamic> json) {
+    final configuredServers = _parseStunServers(
+      json['stunServers'],
+      legacyUdp: json['stunServer'] as String?,
+      legacyTcp: json['tcpStunServer'] as String?,
+    );
     return NatTraversalConfig(
-      stunServer: (json['stunServer'] as String?)?.trim().isNotEmpty == true
-          ? (json['stunServer'] as String).trim()
-          : defaultStunServer,
-      tcpStunServer:
-          (json['tcpStunServer'] as String?)?.trim().isNotEmpty == true
-          ? (json['tcpStunServer'] as String).trim()
-          : defaultTcpStunServer,
+      stunServers: configuredServers,
       turnServer: (json['turnServer'] as String? ?? '').trim(),
       turnUsername: (json['turnUsername'] as String? ?? '').trim(),
       turnPassword: json['turnPassword'] as String? ?? '',
@@ -88,6 +85,39 @@ class NatTraversalConfig {
           : defaultTcpKeepAliveServer,
     );
   }
+}
+
+List<String> _parseStunServers(
+  Object? value, {
+  String? legacyUdp,
+  String? legacyTcp,
+}) {
+  final seen = <String>{};
+  final result = <String>[];
+
+  void addServer(String? candidate) {
+    final value = candidate?.trim() ?? '';
+    if (value.isEmpty || !seen.add(value)) {
+      return;
+    }
+    result.add(value);
+  }
+
+  if (value is List) {
+    for (final item in value) {
+      if (item is String) {
+        addServer(item);
+      }
+    }
+  }
+
+  addServer(legacyUdp);
+  addServer(legacyTcp);
+
+  if (result.isEmpty) {
+    return NatTraversalConfig.defaultStunServers;
+  }
+  return result;
 }
 
 class NatTunnelRule {
@@ -197,9 +227,17 @@ class NatDetectionSummary {
     required this.rfc5780Supported,
     required this.supportLevel,
     required this.message,
+    required this.tcpStunReachable,
+    required this.tcpStunMessage,
+    this.selectedUdpStunServer,
+    this.selectedUdpStunLatencyMs,
+    this.selectedTcpStunServer,
+    this.selectedTcpStunLatencyMs,
     this.publicIp,
     this.publicPort,
     this.alternateServer,
+    this.tcpPublicIp,
+    this.tcpPublicPort,
   });
 
   final DateTime checkedAt;
@@ -212,6 +250,14 @@ class NatDetectionSummary {
   final bool rfc5780Supported;
   final NatSupportLevel supportLevel;
   final String message;
+  final bool tcpStunReachable;
+  final String tcpStunMessage;
+  final String? selectedUdpStunServer;
+  final int? selectedUdpStunLatencyMs;
+  final String? selectedTcpStunServer;
+  final int? selectedTcpStunLatencyMs;
+  final String? tcpPublicIp;
+  final int? tcpPublicPort;
 
   bool get canAttemptUdpHolePunch {
     return supportLevel == NatSupportLevel.supported ||
@@ -225,6 +271,33 @@ class NatDetectionSummary {
       return '未发现';
     }
     return '$ip:$port';
+  }
+
+  String get tcpPublicEndpoint {
+    final ip = tcpPublicIp;
+    final port = tcpPublicPort;
+    if (ip == null || port == null) {
+      return '未发现';
+    }
+    return '$ip:$port';
+  }
+
+  String get udpSelectionLabel {
+    final server = selectedUdpStunServer;
+    if (server == null || server.isEmpty) {
+      return '未选中';
+    }
+    final latency = selectedUdpStunLatencyMs;
+    return latency == null ? server : '$server · $latency ms';
+  }
+
+  String get tcpSelectionLabel {
+    final server = selectedTcpStunServer;
+    if (server == null || server.isEmpty) {
+      return '未选中';
+    }
+    final latency = selectedTcpStunLatencyMs;
+    return latency == null ? server : '$server · $latency ms';
   }
 }
 

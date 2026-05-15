@@ -25,8 +25,17 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  bluetooth_audio_channel_ =
+      std::make_unique<BluetoothAudioChannel>(
+          flutter_controller_->engine()->messenger());
   nat_traversal_channel_ =
       std::make_unique<NatTraversalChannel>(
+          flutter_controller_->engine()->messenger());
+  phone_manager_channel_ =
+      std::make_unique<PhoneManagerChannel>(
+          flutter_controller_->engine()->messenger());
+  system_control_channel_ =
+      std::make_unique<SystemControlChannel>(
           flutter_controller_->engine()->messenger());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
@@ -44,7 +53,10 @@ bool FlutterWindow::OnCreate() {
 
 void FlutterWindow::OnDestroy() {
   if (flutter_controller_) {
+    bluetooth_audio_channel_ = nullptr;
     nat_traversal_channel_ = nullptr;
+    phone_manager_channel_ = nullptr;
+    system_control_channel_ = nullptr;
     flutter_controller_ = nullptr;
   }
 

@@ -8,10 +8,13 @@ import 'package:intl/intl.dart';
 
 import '../data/app_database.dart';
 import '../data/database_provider.dart';
+import '../get_token/get_token_tool.dart';
 import '../ledger/alipay_bill_import_service.dart';
 import '../network/dns_leak_tool.dart';
 import '../network/nat_traversal_tool.dart';
+import '../phone_manager/phone_manager_tool.dart';
 import '../steam_status/steam_status_tool.dart';
+import '../system_control/system_control_tool.dart';
 import '../theme/app_theme.dart';
 import '../tools/tool_registry.dart';
 import '../ui/app_panel.dart';
@@ -39,9 +42,12 @@ class ToolPage extends StatelessWidget {
                 'countdown' => const CountdownTool(),
                 'converter' => const ConverterTool(),
                 'password' => const PasswordTool(),
+                'getToken' => const GetTokenTool(),
                 'pomodoro' => const PomodoroTool(),
                 'dnsLeak' => const DnsLeakTool(),
                 'natTraversal' => const NatTraversalTool(),
+                'phoneManager' || 'bluetoothAudio' => const PhoneManagerTool(),
+                'systemControl' => const SystemControlTool(),
                 'steamStatus' => const SteamStatusTool(),
                 _ => EmptyState(
                   icon: tool.icon,

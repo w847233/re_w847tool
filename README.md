@@ -11,7 +11,7 @@
 - 本地优先：数据默认落地到本机 SQLite。
 - 可同步：支持把本地快照加密后上传到 WebDAV。
 - 中文体验优先：界面语言、日期格式和文案都以简体中文为主。
-- Windows 能力增强：包含 DNS 设置、NAT 打洞、Windows 原生网络通道等能力。
+- Windows 能力增强：包含 DNS 设置、NAT 打洞、系统控制、Windows 原生网络通道等能力。
 - 混合实现：主界面使用 Flutter/Dart，`Steam 状态`工具内置 Python 侧车服务。
 
 ## 功能概览
@@ -33,10 +33,19 @@
 - `检测DNS泄露`：检测 DNS 出口、对比候选 DNS，并尝试写入系统设置。
 - `NAT隧道打洞`：检测 NAT 类型，保存 UDP/TCP 转发规则，并支持应用启动后自动恢复已启用规则。
 
+### 媒体
+
+- `蓝牙音频转换`：将手机蓝牙音频转接到 Windows 当前默认播放设备。
+
+### 系统
+
+- `系统控制`：提供 Windows 专属系统快捷操作，目前支持一键熄屏。
+
 ### 实用
 
 - `单位换算`：长度、重量、温度换算。
 - `密码生成`：本地生成临时密码。
+- `Get Token`：采集凭证额度并汇总 token 使用情况。
 - `Steam 状态`：管理 Steam 登录、自定义状态与 Rich Presence，并带有本地 Python 后端。
 
 ### 首页与设置
@@ -74,6 +83,7 @@
 - 首次进入 `Steam 状态`工具页时，程序会释放内置后端脚本，创建虚拟环境，并尝试根据 `assets/steam_status_backend/requirements.txt` 自动安装依赖。
 - `检测DNS泄露` 与部分网络能力涉及本机系统网络设置，实际效果受当前操作系统权限与运行环境限制。
 - `NAT隧道打洞` 的 TCP 能力依赖 Windows 原生通道支持；如果当前运行环境未加载原生模块，界面会显示受限提示。
+- `系统控制` 依赖 Windows 原生通道；一键熄屏只关闭显示器，不会锁屏、睡眠或关闭程序。
 
 ## 快速开始
 
@@ -98,6 +108,37 @@ flutter run -d windows
 ```
 
 `run.bat` 会优先尝试使用 `C:\tmp\flutter\bin\flutter.bat`，如果不存在，则回退到环境变量中的 `flutter`。
+
+### 2.1 以包身份启动 Windows Debug 版
+
+部分 Windows 蓝牙、媒体和通话能力需要 MSIX/package identity。普通 `flutter run -d windows`
+启动的是未打包 exe，系统可能拒绝 `bluetooth`、`globalMediaControl` 或
+`phoneLineTransportManagement` 能力。需要用 Debug 二进制调试这些能力时，运行：
+
+```powershell
+.\run_debug_msix.bat
+```
+
+这个脚本会构建 Windows Debug 产物，只给
+`build\windows\x64\runner\Debug\personal_toolbox.exe` 注入调试用 package identity，
+创建并签名一个本机调试用 identity MSIX，再用
+`Add-AppxPackage -ExternalLocation` 把包身份关联到 Debug 输出目录，最后启动同一份
+Debug exe。源码中的 `windows\runner\runner.exe.manifest` 仍保持普通桌面 manifest，
+不会把 debug identity 带进 Release 构建。
+
+首次运行时，脚本可能会弹出 UAC，用于把本机调试签名证书导入当前机器的
+`TrustedPeople` 和 `Root` 证书存储；否则 Windows 会拒绝安装自签名 MSIX。
+如果只想检查脚本到打包阶段、不要弹出 UAC，可以运行：
+
+```powershell
+.\run_debug_msix.bat -NoElevate
+```
+
+如果系统拒绝 restricted capability，可以先跳过通话管理能力验证：
+
+```powershell
+.\run_debug_msix.bat -SkipRestrictedCapabilities
+```
 
 ### 3. 构建 Windows 发布包
 
@@ -144,6 +185,8 @@ build\windows\x64\runner\Release
 从工具注册表可见，以下工具不参与同步：
 
 - `检测DNS泄露`
+- `蓝牙音频转换`
+- `系统控制`
 - `单位换算`
 - `密码生成`
 
@@ -160,7 +203,10 @@ lib/
     tools/                     工具注册表
     data/                      Drift 数据库与 Provider
     sync/                      WebDAV 同步与加密
+    bluetooth_audio/           蓝牙音频转接能力
+    get_token/                 token 使用情况采集工具
     network/                   DNS / NAT 相关能力
+    system_control/            Windows 系统控制能力
     steam_status/              Steam 状态工具与侧车控制
     ledger/                    账单导入等业务逻辑
     home/                      主页布局与小组件定义

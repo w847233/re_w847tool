@@ -3,13 +3,15 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../network/nat_traversal_models.dart';
+import '../network/nat_traversal_repository.dart';
 import '../settings/font_weight_option.dart';
 import '../settings/settings_repository.dart';
+import '../sync/sync_service.dart';
+import '../sync/webdav_client.dart';
 import '../theme/app_theme.dart';
 import '../ui/app_panel.dart';
 import '../ui/latest_snack_bar.dart';
-import '../network/nat_traversal_models.dart';
-import '../network/nat_traversal_repository.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key, required this.section});
@@ -259,14 +261,22 @@ class _NetworkSettingsPanel extends ConsumerStatefulWidget {
 }
 
 class _NetworkSettingsPanelState extends ConsumerState<_NetworkSettingsPanel> {
-  final _stunController = TextEditingController();
-  final _tcpStunController = TextEditingController();
+  final _stunServersController = TextEditingController();
   final _turnController = TextEditingController();
   final _turnUsernameController = TextEditingController();
   final _turnPasswordController = TextEditingController();
   final _tcpKeepAliveController = TextEditingController();
+  final _webDavBaseUrlController = TextEditingController();
+  final _webDavUsernameController = TextEditingController();
+  final _webDavPasswordController = TextEditingController();
+  final _syncPassphraseController = TextEditingController();
   bool _loaded = false;
-  bool _saving = false;
+  bool _natSaving = false;
+  bool _webDavSaving = false;
+  bool _webDavTesting = false;
+  bool _syncPassphraseSaving = false;
+  bool _syncUploading = false;
+  bool _syncDownloading = false;
 
   @override
   void initState() {
@@ -276,137 +286,289 @@ class _NetworkSettingsPanelState extends ConsumerState<_NetworkSettingsPanel> {
 
   @override
   void dispose() {
-    _stunController.dispose();
-    _tcpStunController.dispose();
+    _stunServersController.dispose();
     _turnController.dispose();
     _turnUsernameController.dispose();
     _turnPasswordController.dispose();
     _tcpKeepAliveController.dispose();
+    _webDavBaseUrlController.dispose();
+    _webDavUsernameController.dispose();
+    _webDavPasswordController.dispose();
+    _syncPassphraseController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return AppPanel(
-      title: 'NAT 穿透服务器',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'UDP STUN 用于检测公网映射和 NAT 行为；TCP 映射需要一个支持 TCP 的 STUN 服务器和一个 HTTP 保活服务器。TURN 用于中继兜底。',
-            style: TextStyle(color: AppColors.muted),
-          ),
-          const SizedBox(height: 18),
-          if (!_loaded) ...[
-            const LinearProgressIndicator(),
-          ] else ...[
-            TextField(
-              controller: _stunController,
-              decoration: const InputDecoration(
-                labelText: 'UDP STUN 服务器',
-                hintText: NatTraversalConfig.defaultStunServer,
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _tcpStunController,
-              decoration: const InputDecoration(
-                labelText: 'TCP STUN 服务器',
-                hintText: NatTraversalConfig.defaultTcpStunServer,
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _turnController,
-              decoration: const InputDecoration(
-                labelText: 'TURN 服务器',
-                hintText: 'turn.example.com:3478',
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _turnUsernameController,
-              decoration: const InputDecoration(labelText: 'TURN 用户名'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _turnPasswordController,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: 'TURN 密码'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _tcpKeepAliveController,
-              decoration: const InputDecoration(
-                labelText: 'TCP HTTP 保活服务器',
-                hintText: NatTraversalConfig.defaultTcpKeepAliveServer,
-              ),
-            ),
-            const SizedBox(height: 14),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.bg,
-                border: Border.all(color: AppColors.border),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Text(
-                '注意：TCP 模式会从同一本地端口建立 HTTP 保活和 TCP STUN 映射，再监听该端口转发到本地服务。UDP 检测为 Full Cone 只说明 UDP 行为正常；TCP STUN 地址还必须能接受 TCP 连接。',
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AppPanel(
+          title: 'NAT 穿透服务器',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'STUN 服务器列表由你提供，一行一个。检测时会并行测试整份列表，并分别选出 UDP NAT 检测和 TCP STUN 探测延迟最低的可用服务器。TURN 用于中继兜底。',
                 style: TextStyle(color: AppColors.muted),
               ),
-            ),
-            const SizedBox(height: 14),
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton.icon(
-                onPressed: _saving ? null : _saveConfig,
-                icon: _saving
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.save_outlined),
-                label: Text(_saving ? '保存中...' : '保存服务器设置'),
+              const SizedBox(height: 18),
+              if (!_loaded) ...[
+                const LinearProgressIndicator(),
+              ] else ...[
+                TextField(
+                  controller: _stunServersController,
+                  maxLines: 5,
+                  decoration: const InputDecoration(
+                    labelText: 'STUN 服务器列表',
+                    hintText:
+                        '一行一个，例如：\nstun.l.google.com:19302\nstun.nextcloud.com:443',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _turnController,
+                  decoration: const InputDecoration(
+                    labelText: 'TURN 服务器',
+                    hintText: 'turn.example.com:3478',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _turnUsernameController,
+                  decoration: const InputDecoration(labelText: 'TURN 用户名'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _turnPasswordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: 'TURN 密码'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _tcpKeepAliveController,
+                  decoration: const InputDecoration(
+                    labelText: 'TCP HTTP 保活服务器',
+                    hintText: NatTraversalConfig.defaultTcpKeepAliveServer,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.bg,
+                    border: Border.all(color: AppColors.border),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    '注意：TCP 模式会从同一本地端口建立 HTTP 保活和 TCP STUN 映射，再监听该端口转发到本地服务。UDP 检测为 Full Cone 只说明 UDP 行为正常；TCP STUN 地址还必须能接受 TCP 连接。',
+                    style: TextStyle(color: AppColors.muted),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton.icon(
+                    onPressed: _natSaving ? null : _saveNatConfig,
+                    icon: _natSaving
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.save_outlined),
+                    label: Text(_natSaving ? '保存中...' : '保存 NAT 设置'),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        AppPanel(
+          title: 'WebDAV 同步服务器',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '配置 WebDAV 服务器地址和账号信息，后续同步会复用这里保存的连接参数。同步快照仍会在本地加密后再上传。',
+                style: TextStyle(color: AppColors.muted),
               ),
-            ),
-          ],
-        ],
-      ),
+              const SizedBox(height: 18),
+              if (!_loaded) ...[
+                const LinearProgressIndicator(),
+              ] else ...[
+                TextField(
+                  controller: _webDavBaseUrlController,
+                  decoration: const InputDecoration(
+                    labelText: 'WebDAV 服务器地址',
+                    hintText:
+                        'https://dav.example.com/remote.php/dav/files/name/',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _webDavUsernameController,
+                  decoration: const InputDecoration(labelText: 'WebDAV 用户名'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _webDavPasswordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: 'WebDAV 密码'),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: _syncPassphraseController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: '同步加密口令',
+                    hintText: '用于加密上传和解密下载的同一口令',
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.bg,
+                    border: Border.all(color: AppColors.border),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    '远端同步文件固定写入 personal-toolbox/state.v1.enc.json。建议把地址指向你的 WebDAV 根目录或用户目录。同步口令会参与本地加密和解密；如果点击“保存口令”，它会以明文形式保存在本机应用设置中。',
+                    style: TextStyle(color: AppColors.muted),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _busyWithWebDavActions
+                            ? null
+                            : _testWebDavConnection,
+                        icon: _webDavTesting
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.wifi_tethering_outlined),
+                        label: Text(_webDavTesting ? '测试中...' : '测试连接'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _busyWithWebDavActions
+                            ? null
+                            : _saveSyncPassphrase,
+                        icon: _syncPassphraseSaving
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.key_outlined),
+                        label: Text(_syncPassphraseSaving ? '保存中...' : '保存口令'),
+                      ),
+                      FilledButton.icon(
+                        onPressed: _busyWithWebDavActions
+                            ? null
+                            : _saveWebDavConfig,
+                        icon: _webDavSaving
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.cloud_sync_outlined),
+                        label: Text(_webDavSaving ? '保存中...' : '保存 WebDAV 设置'),
+                      ),
+                      FilledButton.icon(
+                        onPressed: _busyWithWebDavActions ? null : _uploadSync,
+                        icon: _syncUploading
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.cloud_upload_outlined),
+                        label: Text(_syncUploading ? '上传中...' : '上传同步'),
+                      ),
+                      FilledButton.icon(
+                        onPressed: _busyWithWebDavActions
+                            ? null
+                            : _downloadSync,
+                        icon: _syncDownloading
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.cloud_download_outlined),
+                        label: Text(_syncDownloading ? '下载中...' : '下载同步'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 
   Future<void> _loadConfig() async {
-    final config = await ref.read(natTraversalRepositoryProvider).loadConfig();
+    final results = await Future.wait([
+      ref.read(natTraversalRepositoryProvider).loadConfig(),
+      ref.read(settingsRepositoryProvider).loadWebDavSyncConfig(),
+      ref.read(settingsRepositoryProvider).loadSyncPassphrase(),
+    ]);
+    final natConfig = results[0] as NatTraversalConfig;
+    final webDavConfig = results[1] as WebDavSyncServerConfig;
     if (!mounted) {
       return;
     }
     setState(() {
-      _stunController.text = config.stunServer;
-      _tcpStunController.text = config.tcpStunServer;
-      _turnController.text = config.turnServer;
-      _turnUsernameController.text = config.turnUsername;
-      _turnPasswordController.text = config.turnPassword;
-      _tcpKeepAliveController.text = config.tcpKeepAliveServer;
+      _stunServersController.text = natConfig.stunServers.join('\n');
+      _turnController.text = natConfig.turnServer;
+      _turnUsernameController.text = natConfig.turnUsername;
+      _turnPasswordController.text = natConfig.turnPassword;
+      _tcpKeepAliveController.text = natConfig.tcpKeepAliveServer;
+      _webDavBaseUrlController.text = webDavConfig.baseUrl;
+      _webDavUsernameController.text = webDavConfig.username;
+      _webDavPasswordController.text = webDavConfig.password;
+      _syncPassphraseController.text = results[2] as String;
       _loaded = true;
     });
   }
 
-  Future<void> _saveConfig() async {
-    setState(() => _saving = true);
+  Future<void> _saveNatConfig() async {
+    setState(() => _natSaving = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
+      final stunServers = _parseStunServerLines(_stunServersController.text);
       await ref
           .read(natTraversalRepositoryProvider)
           .saveConfig(
             NatTraversalConfig(
-              stunServer: _stunController.text.trim().isEmpty
-                  ? NatTraversalConfig.defaultStunServer
-                  : _stunController.text.trim(),
-              tcpStunServer: _tcpStunController.text.trim().isEmpty
-                  ? NatTraversalConfig.defaultTcpStunServer
-                  : _tcpStunController.text.trim(),
+              stunServers: stunServers.isEmpty
+                  ? NatTraversalConfig.defaultStunServers
+                  : stunServers,
               turnServer: _turnController.text.trim(),
               turnUsername: _turnUsernameController.text.trim(),
               turnPassword: _turnPasswordController.text,
@@ -424,9 +586,195 @@ class _NetworkSettingsPanelState extends ConsumerState<_NetworkSettingsPanel> {
       );
     } finally {
       if (mounted) {
-        setState(() => _saving = false);
+        setState(() => _natSaving = false);
       }
     }
+  }
+
+  List<String> _parseStunServerLines(String rawText) {
+    final seen = <String>{};
+    final result = <String>[];
+    for (final line in rawText.split(RegExp(r'\r?\n'))) {
+      final value = line.trim();
+      if (value.isEmpty || !seen.add(value)) {
+        continue;
+      }
+      result.add(value);
+    }
+    return result;
+  }
+
+  Future<void> _saveWebDavConfig() async {
+    setState(() => _webDavSaving = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref
+          .read(settingsRepositoryProvider)
+          .saveWebDavSyncConfig(
+            WebDavSyncServerConfig(
+              baseUrl: _webDavBaseUrlController.text.trim(),
+              username: _webDavUsernameController.text.trim(),
+              password: _webDavPasswordController.text,
+            ),
+          );
+      messenger.showLatestSnackBar(
+        const SnackBar(content: Text('WebDAV 同步服务器设置已保存')),
+      );
+    } catch (_) {
+      messenger.showLatestSnackBar(
+        const SnackBar(content: Text('WebDAV 同步服务器设置保存失败')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _webDavSaving = false);
+      }
+    }
+  }
+
+  Future<void> _saveSyncPassphrase() async {
+    final passphrase = _syncPassphraseController.text.trim();
+    final messenger = ScaffoldMessenger.of(context);
+    if (passphrase.isEmpty) {
+      messenger.showLatestSnackBar(const SnackBar(content: Text('请先填写同步加密口令')));
+      return;
+    }
+
+    setState(() => _syncPassphraseSaving = true);
+    try {
+      await ref.read(settingsRepositoryProvider).saveSyncPassphrase(passphrase);
+      messenger.showLatestSnackBar(
+        const SnackBar(content: Text('同步加密口令已保存到本机')),
+      );
+    } catch (_) {
+      messenger.showLatestSnackBar(const SnackBar(content: Text('同步加密口令保存失败')));
+    } finally {
+      if (mounted) {
+        setState(() => _syncPassphraseSaving = false);
+      }
+    }
+  }
+
+  Future<void> _testWebDavConnection() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final config = _currentWebDavConfig;
+    if (!config.isConfigured) {
+      messenger.showLatestSnackBar(
+        const SnackBar(content: Text('请先填写完整的 WebDAV 地址、用户名和密码')),
+      );
+      return;
+    }
+
+    setState(() => _webDavTesting = true);
+    try {
+      final success = await ref
+          .read(webDavClientProvider)
+          .testConnection(config.toWebDavConfig());
+      if (!mounted) {
+        return;
+      }
+      messenger.showLatestSnackBar(
+        SnackBar(
+          content: Text(success ? 'WebDAV 连接成功' : 'WebDAV 连接失败，请检查地址、账号或密码'),
+        ),
+      );
+    } catch (error) {
+      messenger.showLatestSnackBar(
+        SnackBar(content: Text('WebDAV 连接测试失败：$error')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _webDavTesting = false);
+      }
+    }
+  }
+
+  Future<void> _uploadSync() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final config = _currentWebDavConfig;
+    final passphrase = _syncPassphraseController.text.trim();
+    if (!config.isConfigured) {
+      messenger.showLatestSnackBar(
+        const SnackBar(content: Text('请先填写完整的 WebDAV 地址、用户名和密码')),
+      );
+      return;
+    }
+    if (passphrase.isEmpty) {
+      messenger.showLatestSnackBar(const SnackBar(content: Text('请先填写同步加密口令')));
+      return;
+    }
+
+    setState(() => _syncUploading = true);
+    try {
+      await ref
+          .read(syncServiceProvider)
+          .uploadEncryptedSnapshot(
+            config: config.toWebDavConfig(),
+            passphrase: passphrase,
+          );
+      messenger.showLatestSnackBar(
+        const SnackBar(content: Text('同步快照已上传到 WebDAV')),
+      );
+    } catch (error) {
+      messenger.showLatestSnackBar(SnackBar(content: Text('上传同步失败：$error')));
+    } finally {
+      if (mounted) {
+        setState(() => _syncUploading = false);
+      }
+    }
+  }
+
+  Future<void> _downloadSync() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final config = _currentWebDavConfig;
+    final passphrase = _syncPassphraseController.text.trim();
+    if (!config.isConfigured) {
+      messenger.showLatestSnackBar(
+        const SnackBar(content: Text('请先填写完整的 WebDAV 地址、用户名和密码')),
+      );
+      return;
+    }
+    if (passphrase.isEmpty) {
+      messenger.showLatestSnackBar(const SnackBar(content: Text('请先填写同步加密口令')));
+      return;
+    }
+
+    setState(() => _syncDownloading = true);
+    try {
+      final hasRemoteSnapshot = await ref
+          .read(syncServiceProvider)
+          .downloadEncryptedSnapshot(
+            config: config.toWebDavConfig(),
+            passphrase: passphrase,
+          );
+      messenger.showLatestSnackBar(
+        SnackBar(
+          content: Text(
+            hasRemoteSnapshot ? '已从 WebDAV 下载并导入同步快照' : '远端还没有可下载的同步快照',
+          ),
+        ),
+      );
+    } catch (error) {
+      messenger.showLatestSnackBar(SnackBar(content: Text('下载同步失败：$error')));
+    } finally {
+      if (mounted) {
+        setState(() => _syncDownloading = false);
+      }
+    }
+  }
+
+  bool get _busyWithWebDavActions =>
+      _webDavSaving ||
+      _webDavTesting ||
+      _syncPassphraseSaving ||
+      _syncUploading ||
+      _syncDownloading;
+
+  WebDavSyncServerConfig get _currentWebDavConfig {
+    return WebDavSyncServerConfig(
+      baseUrl: _webDavBaseUrlController.text.trim(),
+      username: _webDavUsernameController.text.trim(),
+      password: _webDavPasswordController.text,
+    );
   }
 }
 

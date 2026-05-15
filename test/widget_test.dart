@@ -8,12 +8,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_toolbox/main.dart';
 import 'package:personal_toolbox/src/data/app_database.dart';
 import 'package:personal_toolbox/src/data/database_provider.dart';
+import 'package:personal_toolbox/src/get_token/get_token_repository.dart';
+import 'package:personal_toolbox/src/get_token/get_token_tool.dart';
 import 'package:personal_toolbox/src/home/home_layout_repository.dart';
 import 'package:personal_toolbox/src/network/nat_traversal_models.dart';
 import 'package:personal_toolbox/src/network/nat_traversal_repository.dart';
 import 'package:personal_toolbox/src/network/nat_traversal_service.dart';
 import 'package:personal_toolbox/src/network/nat_traversal_tool.dart';
 import 'package:personal_toolbox/src/settings/settings_repository.dart';
+import 'package:personal_toolbox/src/sync/sync_service.dart';
+import 'package:personal_toolbox/src/sync/webdav_client.dart';
 import 'package:personal_toolbox/src/steam_status/steam_status_models.dart';
 import 'package:personal_toolbox/src/steam_status/steam_status_repository.dart';
 import 'package:personal_toolbox/src/steam_status/steam_status_service.dart';
@@ -200,6 +204,51 @@ void main() {
     await _disposeApp(tester);
   });
 
+  testWidgets('Get Token 工具页可以保存配置', (tester) async {
+    await _setDesktopSize(tester);
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [appDatabaseProvider.overrideWithValue(database)],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              padding: EdgeInsets.all(24),
+              child: GetTokenTool(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await _pumpUi(tester);
+
+    expect(find.text('采集配置'), findsOneWidget);
+    expect(find.widgetWithText(TextField, '管理接口 baseUrl'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'Bearer Key'), findsOneWidget);
+
+    await tester.enterText(
+      find.widgetWithText(TextField, '管理接口 baseUrl'),
+      'http://example.com/v0/management',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Bearer Key'),
+      'local-secret',
+    );
+    await tester.tap(find.text('保存配置').first);
+    await _pumpUi(tester);
+    await tester.tap(find.text('保存密钥').first);
+    await _pumpUi(tester);
+
+    final repository = GetTokenRepository(database);
+    final config = await repository.loadConfig();
+    final secret = await repository.loadSecretConfig();
+    expect(config.baseUrl, 'http://example.com/v0/management');
+    expect(secret.managementKey, 'local-secret');
+
+    await _disposeApp(tester);
+  });
+
   testWidgets('导航中包含检测DNS泄露工具并可进入页面', (tester) async {
     await _setDesktopSize(tester);
     await _pumpApp(tester);
@@ -231,16 +280,12 @@ void main() {
 
     expect(find.text('设置 · 网络'), findsOneWidget);
     expect(find.text('NAT 穿透服务器'), findsOneWidget);
-    expect(find.widgetWithText(TextField, 'TCP STUN 服务器'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'STUN 服务器列表'), findsOneWidget);
     expect(find.widgetWithText(TextField, 'TCP HTTP 保活服务器'), findsOneWidget);
 
     await tester.enterText(
-      find.widgetWithText(TextField, 'UDP STUN 服务器'),
-      'stun.example.com:3478',
-    );
-    await tester.enterText(
-      find.widgetWithText(TextField, 'TCP STUN 服务器'),
-      'tcp-stun.example.com:443',
+      find.widgetWithText(TextField, 'STUN 服务器列表'),
+      'stun.example.com:3478\ntcp-stun.example.com:443',
     );
     await tester.enterText(
       find.widgetWithText(TextField, 'TURN 服务器'),
@@ -250,14 +295,212 @@ void main() {
       find.widgetWithText(TextField, 'TCP HTTP 保活服务器'),
       'http.example.com:80',
     );
-    await tester.tap(find.text('保存服务器设置'));
+    await tester.tap(find.text('保存 NAT 设置'));
     await _pumpUi(tester);
 
     final saved = await database.getSettingValue(natTraversalConfigKey);
     expect(saved, contains('stun.example.com:3478'));
     expect(saved, contains('tcp-stun.example.com:443'));
+    expect(saved, contains('stunServers'));
     expect(saved, contains('turn.example.com:3478'));
     expect(saved, contains('http.example.com:80'));
+
+    await _disposeApp(tester);
+  });
+
+  testWidgets('设置页可以保存 WebDAV 同步服务器配置', (tester) async {
+    await _setDesktopSize(tester);
+    final database = await _pumpApp(tester);
+
+    await tester.tap(find.text('设置'));
+    await _pumpUi(tester);
+    await tester.tap(find.text('网络').last);
+    await _pumpUi(tester);
+
+    expect(find.text('WebDAV 同步服务器'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'WebDAV 服务器地址'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'WebDAV 用户名'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'WebDAV 密码'), findsOneWidget);
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'WebDAV 服务器地址'),
+      'https://dav.example.com/remote.php/dav/files/demo/',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'WebDAV 用户名'),
+      'demo-user',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'WebDAV 密码'),
+      'demo-password',
+    );
+    await tester.ensureVisible(find.text('保存 WebDAV 设置'));
+    await tester.tap(find.text('保存 WebDAV 设置'));
+    await _pumpUi(tester);
+
+    final saved = await database.getSettingValue(webDavSyncConfigKey);
+    expect(saved, contains('dav.example.com'));
+    expect(saved, contains('demo-user'));
+    expect(saved, contains('demo-password'));
+
+    await _disposeApp(tester);
+  });
+
+  testWidgets('设置页可以测试 WebDAV 同步服务器连接', (tester) async {
+    await _setDesktopSize(tester);
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final client = _FakeWebDavClient(result: true);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(database),
+          webDavClientProvider.overrideWithValue(client),
+        ],
+        child: const PersonalToolboxApp(),
+      ),
+    );
+    await _pumpUi(tester);
+
+    await tester.tap(find.text('设置'));
+    await _pumpUi(tester);
+    await tester.tap(find.text('网络').last);
+    await _pumpUi(tester);
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'WebDAV 服务器地址'),
+      'https://dav.example.com/remote.php/dav/files/demo/',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'WebDAV 用户名'),
+      'demo-user',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'WebDAV 密码'),
+      'demo-password',
+    );
+    await tester.ensureVisible(find.text('测试连接'));
+    await tester.tap(find.text('测试连接'));
+    await _pumpUi(tester);
+
+    expect(find.text('WebDAV 连接成功'), findsOneWidget);
+    expect(
+      client.lastConfig?.baseUrl,
+      'https://dav.example.com/remote.php/dav/files/demo/',
+    );
+    expect(client.lastConfig?.username, 'demo-user');
+    expect(client.lastConfig?.password, 'demo-password');
+
+    await _disposeApp(tester);
+  });
+
+  testWidgets('设置页可以上传同步快照到 WebDAV', (tester) async {
+    await _setDesktopSize(tester);
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final syncService = _FakeSyncService();
+    addTearDown(syncService.close);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(database),
+          syncServiceProvider.overrideWithValue(syncService),
+        ],
+        child: const PersonalToolboxApp(),
+      ),
+    );
+    await _pumpUi(tester);
+
+    await tester.tap(find.text('设置'));
+    await _pumpUi(tester);
+    await tester.tap(find.text('网络').last);
+    await _pumpUi(tester);
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'WebDAV 服务器地址'),
+      'https://dav.example.com/remote.php/dav/files/demo/',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'WebDAV 用户名'),
+      'demo-user',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'WebDAV 密码'),
+      'demo-password',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, '同步加密口令'),
+      'secret-passphrase',
+    );
+    await tester.ensureVisible(find.text('上传同步'));
+    await tester.tap(find.text('上传同步'));
+    await _pumpUi(tester);
+
+    expect(find.text('同步快照已上传到 WebDAV'), findsOneWidget);
+    expect(syncService.uploadCalls, 1);
+    expect(
+      syncService.lastConfig?.baseUrl,
+      'https://dav.example.com/remote.php/dav/files/demo/',
+    );
+    expect(syncService.lastConfig?.username, 'demo-user');
+    expect(syncService.lastConfig?.password, 'demo-password');
+    expect(syncService.lastPassphrase, 'secret-passphrase');
+
+    await _disposeApp(tester);
+  });
+
+  testWidgets('设置页可以从 WebDAV 下载同步快照', (tester) async {
+    await _setDesktopSize(tester);
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final syncService = _FakeSyncService(downloadResult: true);
+    addTearDown(syncService.close);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(database),
+          syncServiceProvider.overrideWithValue(syncService),
+        ],
+        child: const PersonalToolboxApp(),
+      ),
+    );
+    await _pumpUi(tester);
+
+    await tester.tap(find.text('设置'));
+    await _pumpUi(tester);
+    await tester.tap(find.text('网络').last);
+    await _pumpUi(tester);
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'WebDAV 服务器地址'),
+      'https://dav.example.com/remote.php/dav/files/demo/',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'WebDAV 用户名'),
+      'demo-user',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'WebDAV 密码'),
+      'demo-password',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, '同步加密口令'),
+      'secret-passphrase',
+    );
+    await tester.ensureVisible(find.text('下载同步'));
+    await tester.tap(find.text('下载同步'));
+    await _pumpUi(tester);
+
+    expect(find.text('已从 WebDAV 下载并导入同步快照'), findsOneWidget);
+    expect(syncService.downloadCalls, 1);
+    expect(
+      syncService.lastConfig?.baseUrl,
+      'https://dav.example.com/remote.php/dav/files/demo/',
+    );
+    expect(syncService.lastPassphrase, 'secret-passphrase');
 
     await _disposeApp(tester);
   });
@@ -753,5 +996,65 @@ class _RecordingNatTraversalService extends NatTraversalService {
       publicIp: '203.0.113.10',
       publicPort: 12345,
     );
+  }
+}
+
+class _FakeWebDavClient extends WebDavClient {
+  _FakeWebDavClient({required this.result});
+
+  final bool result;
+  WebDavConfig? lastConfig;
+
+  @override
+  Future<bool> testConnection(WebDavConfig config) async {
+    lastConfig = config;
+    return result;
+  }
+
+  @override
+  void close() {}
+}
+
+class _FakeSyncService extends SyncService {
+  _FakeSyncService._(this._database, {this.downloadResult = false})
+    : super(database: _database, webDavClient: _FakeWebDavClient(result: true));
+
+  factory _FakeSyncService({bool downloadResult = false}) {
+    return _FakeSyncService._(
+      AppDatabase(NativeDatabase.memory()),
+      downloadResult: downloadResult,
+    );
+  }
+
+  final AppDatabase _database;
+  final bool downloadResult;
+  int uploadCalls = 0;
+  int downloadCalls = 0;
+  WebDavConfig? lastConfig;
+  String? lastPassphrase;
+
+  @override
+  Future<void> uploadEncryptedSnapshot({
+    required WebDavConfig config,
+    required String passphrase,
+  }) async {
+    uploadCalls++;
+    lastConfig = config;
+    lastPassphrase = passphrase;
+  }
+
+  @override
+  Future<bool> downloadEncryptedSnapshot({
+    required WebDavConfig config,
+    required String passphrase,
+  }) async {
+    downloadCalls++;
+    lastConfig = config;
+    lastPassphrase = passphrase;
+    return downloadResult;
+  }
+
+  Future<void> close() async {
+    await _database.close();
   }
 }

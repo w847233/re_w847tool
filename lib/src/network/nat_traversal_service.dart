@@ -50,17 +50,22 @@ class NatTraversalService {
       Map.unmodifiable(_snapshots);
 
   Future<NatDetectionSummary> detectNat(NatTraversalConfig config) async {
-    final endpoint = _parseServer(config.stunServer, 19302);
+    final udpSelectionFuture = _selectBestUdpStunServer(config.stunServers);
+    final tcpProbeFuture = _probeBestTcpStunServerForDetection(
+      config.stunServers,
+    );
+    final udpSelection = await udpSelectionFuture;
     final socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
     try {
       final detector = stun.NATDetector(
-        primaryServer: endpoint.host,
-        primaryPort: endpoint.port,
+        primaryServer: udpSelection.endpoint.host,
+        primaryPort: udpSelection.endpoint.port,
         socket: socket,
         timeout: const Duration(seconds: 5),
       );
       final result = await detector.detectNATType();
-      return _summarizeDetection(result);
+      final tcpProbe = await tcpProbeFuture;
+      return _summarizeDetection(result, udpSelection, tcpProbe);
     } finally {
       socket.close();
     }
@@ -458,7 +463,8 @@ class _UdpNatTunnel implements _ActiveTunnel {
 
   @override
   Future<NatTunnelSnapshot> start() async {
-    final stunEndpoint = _parseServer(config.stunServer, 19302);
+    final selectedStun = await _selectBestUdpStunServer(config.stunServers);
+    final stunEndpoint = selectedStun.endpoint;
     final socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
     socket.readEventsEnabled = true;
     _publicSocket = socket;
@@ -486,7 +492,7 @@ class _UdpNatTunnel implements _ActiveTunnel {
       publicPort: publicEndpoint.port,
       localBindPort: socket.port,
       message:
-          'UDP 映射已建立：${publicEndpoint.ip}:${publicEndpoint.port} -> ${rule.targetAddress}:${rule.targetPort}$remoteText',
+          'UDP 映射已建立：${publicEndpoint.ip}:${publicEndpoint.port} -> ${rule.targetAddress}:${rule.targetPort}$remoteText；已选 STUN ${selectedStun.server}（${selectedStun.latencyMs} ms）',
     );
     return _snapshot!;
   }
@@ -632,11 +638,8 @@ class _NativeTcpForwardTunnel implements _ActiveTunnel {
 
   @override
   Future<NatTunnelSnapshot> start() async {
-    final tcpStunEndpoint = _parseServer(
-      config.tcpStunServer,
-      3478,
-      fallback: NatTraversalConfig.defaultTcpStunServer,
-    );
+    final selectedStun = await _selectBestTcpStunServer(config.stunServers);
+    final tcpStunEndpoint = selectedStun.endpoint;
     final httpEndpoint = _parseServer(
       config.tcpKeepAliveServer,
       80,
@@ -649,7 +652,7 @@ class _NativeTcpForwardTunnel implements _ActiveTunnel {
       protocol: rule.protocol,
       status: NatTunnelStatus.starting,
       message:
-          '正在建立内置 TCP full-cone 映射：$targetAddress:${rule.targetPort}，TCP STUN ${tcpStunEndpoint.host}:${tcpStunEndpoint.port}',
+          '正在建立内置 TCP full-cone 映射：$targetAddress:${rule.targetPort}，TCP STUN ${selectedStun.server}（${selectedStun.latencyMs} ms）',
     );
     onChanged(_snapshot!);
 
@@ -727,7 +730,7 @@ String _describeTcpMappingError(
   if (rawMessage.startsWith('connect_tcp_stun_failed') ||
       rawMessage.startsWith('tcp_stun_response')) {
     return '内置 TCP 映射启动失败：无法通过 TCP 连接或读取 TCP STUN 服务器 $tcpStun。'
-        'UDP NAT 检测成功不代表同一个 STUN 地址支持 TCP；请在设置中把 TCP STUN 服务器改为支持 TCP STUN 的地址，例如 ${NatTraversalConfig.defaultTcpStunServer} 或 stun.antisip.com:3478。'
+        '请在设置中调整 STUN 服务器列表，保留支持 TCP STUN 的地址后重试。'
         '原始错误：$rawMessage';
   }
   if (rawMessage.startsWith('connect_http_keepalive_failed')) {
@@ -756,7 +759,11 @@ class _PublicEndpoint {
   final int port;
 }
 
-NatDetectionSummary _summarizeDetection(stun.NATDetectionResult result) {
+NatDetectionSummary _summarizeDetection(
+  stun.NATDetectionResult result,
+  _UdpStunSelection udpSelection,
+  _TcpStunProbeResult tcpProbe,
+) {
   final level = switch (result.natType) {
     stun.NATType.openInternet ||
     stun.NATType.fullCone ||
@@ -786,7 +793,278 @@ NatDetectionSummary _summarizeDetection(stun.NATDetectionResult result) {
     rfc5780Supported: result.rfc5780Supported,
     supportLevel: level,
     message: message,
+    tcpStunReachable: tcpProbe.reachable,
+    tcpStunMessage: tcpProbe.message,
+    selectedUdpStunServer: udpSelection.server,
+    selectedUdpStunLatencyMs: udpSelection.latencyMs,
+    selectedTcpStunServer: tcpProbe.selectedServer,
+    selectedTcpStunLatencyMs: tcpProbe.latencyMs,
+    tcpPublicIp: tcpProbe.publicIp,
+    tcpPublicPort: tcpProbe.publicPort,
   );
+}
+
+Future<_UdpStunSelection> _selectBestUdpStunServer(List<String> servers) async {
+  final attempts = await Future.wait(
+    servers.map(_probeSingleUdpStunServer),
+    eagerError: false,
+  );
+  final successful = attempts.where((attempt) => attempt.success).toList()
+    ..sort((left, right) => left.latencyMs!.compareTo(right.latencyMs!));
+  if (successful.isNotEmpty) {
+    final best = successful.first;
+    return _UdpStunSelection(
+      server: best.server,
+      endpoint: best.endpoint!,
+      publicEndpoint: best.publicEndpoint!,
+      latencyMs: best.latencyMs!,
+    );
+  }
+  throw StateError(
+    'STUN 列表中没有可用于 UDP 的服务器。${attempts.map((attempt) => '${attempt.server}：${attempt.message}').join('；')}',
+  );
+}
+
+Future<_UdpStunProbeAttempt> _probeSingleUdpStunServer(String server) async {
+  final endpoint = _parseServer(server, 19302);
+  final socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+  final stopwatch = Stopwatch()..start();
+  try {
+    final publicEndpoint = await _performStunBinding(
+      socket: socket,
+      events: socket.asBroadcastStream(),
+      stunEndpoint: endpoint,
+      timeout: const Duration(seconds: 5),
+    );
+    stopwatch.stop();
+    return _UdpStunProbeAttempt.success(
+      server: server,
+      endpoint: endpoint,
+      publicEndpoint: publicEndpoint,
+      latencyMs: stopwatch.elapsedMilliseconds,
+    );
+  } catch (error) {
+    stopwatch.stop();
+    return _UdpStunProbeAttempt.failure(
+      server: server,
+      message: _describeUdpProbeFailure(error, endpoint),
+    );
+  } finally {
+    socket.close();
+  }
+}
+
+String _describeUdpProbeFailure(Object error, _ServerEndpoint endpoint) {
+  if (error is TimeoutException) {
+    return 'UDP STUN 超时';
+  }
+  if (error is SocketException) {
+    return 'UDP STUN Socket 异常：${error.message}';
+  }
+  if (error is StateError) {
+    return error.message.toString();
+  }
+  return 'UDP STUN 检测失败：$error（${endpoint.host}:${endpoint.port}）';
+}
+
+Future<_TcpStunSelection> _selectBestTcpStunServer(List<String> servers) async {
+  final mapper = NativeTcpPortMapper();
+  final attempts = await Future.wait(
+    servers.map((server) => _probeSingleTcpStunServer(mapper, server)),
+  );
+  final successful = attempts.where((attempt) => attempt.success).toList()
+    ..sort((left, right) => left.latencyMs!.compareTo(right.latencyMs!));
+  if (successful.isNotEmpty) {
+    final best = successful.first;
+    return _TcpStunSelection(
+      server: best.server,
+      endpoint: best.endpoint!,
+      publicEndpoint: best.publicEndpoint!,
+      latencyMs: best.latencyMs!,
+    );
+  }
+  throw StateError(
+    'STUN 列表中没有可用于 TCP 的服务器。${attempts.map((attempt) => '${attempt.server}：${attempt.message}').join('；')}',
+  );
+}
+
+Future<_TcpStunProbeAttempt> _probeSingleTcpStunServer(
+  NativeTcpPortMapper mapper,
+  String server,
+) async {
+  final endpoint = _parseServer(server, 3478);
+  final stopwatch = Stopwatch()..start();
+  try {
+    final result = await mapper.probeStun(
+      stunHost: endpoint.host,
+      stunPort: endpoint.port,
+    );
+    stopwatch.stop();
+    return _TcpStunProbeAttempt.success(
+      server: server,
+      endpoint: endpoint,
+      publicEndpoint: _PublicEndpoint(
+        ip: result.publicIp,
+        port: result.publicPort,
+      ),
+      latencyMs: stopwatch.elapsedMilliseconds,
+    );
+  } on MissingPluginException {
+    rethrow;
+  } on PlatformException catch (error) {
+    stopwatch.stop();
+    return _TcpStunProbeAttempt.failure(
+      server: server,
+      message: _describeTcpProbeFailure(error.message, endpoint),
+    );
+  } catch (error) {
+    stopwatch.stop();
+    return _TcpStunProbeAttempt.failure(
+      server: server,
+      message: 'TCP STUN 检测失败：$error',
+    );
+  }
+}
+
+Future<_TcpStunProbeResult> _probeBestTcpStunServerForDetection(
+  List<String> servers,
+) async {
+  try {
+    final result = await _selectBestTcpStunServer(servers);
+    return _TcpStunProbeResult(
+      reachable: true,
+      message: 'TCP STUN 可达，已选 ${result.server}（${result.latencyMs} ms）。',
+      selectedServer: result.server,
+      latencyMs: result.latencyMs,
+      publicIp: result.publicEndpoint.ip,
+      publicPort: result.publicEndpoint.port,
+    );
+  } on MissingPluginException {
+    return const _TcpStunProbeResult(
+      reachable: false,
+      message: '当前运行环境没有加载原生 TCP STUN 探测模块。',
+    );
+  } on StateError catch (error) {
+    return _TcpStunProbeResult(
+      reachable: false,
+      message: error.message.toString(),
+    );
+  } catch (error) {
+    return _TcpStunProbeResult(
+      reachable: false,
+      message: 'TCP STUN 检测失败：$error',
+    );
+  }
+}
+
+class _UdpStunProbeAttempt {
+  const _UdpStunProbeAttempt.success({
+    required this.server,
+    required this.endpoint,
+    required this.publicEndpoint,
+    required this.latencyMs,
+  }) : message = 'success';
+
+  const _UdpStunProbeAttempt.failure({
+    required this.server,
+    required this.message,
+  }) : endpoint = null,
+       publicEndpoint = null,
+       latencyMs = null;
+
+  final String server;
+  final _ServerEndpoint? endpoint;
+  final _PublicEndpoint? publicEndpoint;
+  final int? latencyMs;
+  final String message;
+
+  bool get success =>
+      endpoint != null && publicEndpoint != null && latencyMs != null;
+}
+
+class _UdpStunSelection {
+  const _UdpStunSelection({
+    required this.server,
+    required this.endpoint,
+    required this.publicEndpoint,
+    required this.latencyMs,
+  });
+
+  final String server;
+  final _ServerEndpoint endpoint;
+  final _PublicEndpoint publicEndpoint;
+  final int latencyMs;
+}
+
+class _TcpStunProbeAttempt {
+  const _TcpStunProbeAttempt.success({
+    required this.server,
+    required this.endpoint,
+    required this.publicEndpoint,
+    required this.latencyMs,
+  }) : message = 'success';
+
+  const _TcpStunProbeAttempt.failure({
+    required this.server,
+    required this.message,
+  }) : endpoint = null,
+       publicEndpoint = null,
+       latencyMs = null;
+
+  final String server;
+  final _ServerEndpoint? endpoint;
+  final _PublicEndpoint? publicEndpoint;
+  final int? latencyMs;
+  final String message;
+
+  bool get success =>
+      endpoint != null && publicEndpoint != null && latencyMs != null;
+}
+
+class _TcpStunSelection {
+  const _TcpStunSelection({
+    required this.server,
+    required this.endpoint,
+    required this.publicEndpoint,
+    required this.latencyMs,
+  });
+
+  final String server;
+  final _ServerEndpoint endpoint;
+  final _PublicEndpoint publicEndpoint;
+  final int latencyMs;
+}
+
+class _TcpStunProbeResult {
+  const _TcpStunProbeResult({
+    required this.reachable,
+    required this.message,
+    this.selectedServer,
+    this.latencyMs,
+    this.publicIp,
+    this.publicPort,
+  });
+
+  final bool reachable;
+  final String message;
+  final String? selectedServer;
+  final int? latencyMs;
+  final String? publicIp;
+  final int? publicPort;
+}
+
+String _describeTcpProbeFailure(String? rawMessage, _ServerEndpoint endpoint) {
+  final message = rawMessage ?? 'unknown';
+  final tcpStun = '${endpoint.host}:${endpoint.port}';
+  if (message.startsWith('resolve_stun_failed')) {
+    return 'TCP STUN 检测失败：无法解析服务器 $tcpStun。';
+  }
+  if (message.startsWith('create_tcp_stun_socket_failed') ||
+      message.startsWith('connect_tcp_stun_failed') ||
+      message.startsWith('tcp_stun_response')) {
+    return 'TCP STUN 检测失败：无法通过 TCP 连接或读取 TCP STUN 服务器 $tcpStun。';
+  }
+  return 'TCP STUN 检测失败：$message';
 }
 
 Future<_PublicEndpoint> _performStunBinding({
@@ -960,7 +1238,7 @@ _ServerEndpoint _parseServer(
 }) {
   var source = value.trim();
   if (source.isEmpty) {
-    source = fallback ?? NatTraversalConfig.defaultStunServer;
+    source = fallback ?? NatTraversalConfig.defaultStunServers.first;
   }
   if (source.contains('://')) {
     final uri = Uri.tryParse(source);

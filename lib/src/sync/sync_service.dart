@@ -1,10 +1,20 @@
 import 'dart:convert';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../data/app_database.dart';
+import '../data/database_provider.dart';
 import 'sync_crypto_service.dart';
 import 'webdav_client.dart';
 
 const remoteSyncPath = 'personal-toolbox/state.v1.enc.json';
+
+final syncServiceProvider = Provider<SyncService>((ref) {
+  return SyncService(
+    database: ref.watch(appDatabaseProvider),
+    webDavClient: ref.watch(webDavClientProvider),
+  );
+});
 
 class SyncService {
   SyncService({

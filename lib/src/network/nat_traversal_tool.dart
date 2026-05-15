@@ -422,7 +422,7 @@ class _DetectionPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '当前 UDP STUN：${config.stunServer}。检测会读取公网映射、RFC 5780 支持情况和 NAT 过滤行为，用于判断 UDP 打洞成功率。',
+            '当前配置了 ${config.stunServers.length} 个 STUN 服务器。检测会并行测试列表，分别选出 UDP NAT 检测和 TCP STUN 探测延迟最低的可用服务器。',
             style: const TextStyle(color: AppColors.muted),
           ),
           const SizedBox(height: 14),
@@ -486,9 +486,16 @@ class _DetectionResultCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
+          _InfoLine(label: '已选 UDP STUN', value: detection.udpSelectionLabel),
           _InfoLine(label: '公网映射', value: detection.publicEndpoint),
           _InfoLine(label: '过滤行为', value: detection.filteringBehavior),
           _InfoLine(label: '映射行为', value: detection.mappingBehavior),
+          _InfoLine(label: '已选 TCP STUN', value: detection.tcpSelectionLabel),
+          _InfoLine(
+            label: 'TCP STUN',
+            value: detection.tcpStunReachable ? '可达' : '不可达',
+          ),
+          _InfoLine(label: 'TCP 公网端点', value: detection.tcpPublicEndpoint),
           _InfoLine(
             label: 'RFC 5780',
             value: detection.rfc5780Supported ? '支持' : '未发现完整支持',
@@ -498,6 +505,11 @@ class _DetectionResultCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             detection.message,
+            style: const TextStyle(color: AppColors.muted, fontSize: 12),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            detection.tcpStunMessage,
             style: const TextStyle(color: AppColors.muted, fontSize: 12),
           ),
         ],
