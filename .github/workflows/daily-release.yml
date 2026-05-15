@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 env:
-  FLUTTER_VERSION: "3.41.9"
+  FLUTTER_REF: "3.41.9"
 
 jobs:
   build-windows:
@@ -29,12 +29,12 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 安装 Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          cache: true
+      - name: 安装 Flutter SDK
+        shell: pwsh
+        run: |
+          $flutterRoot = Join-Path $env:RUNNER_TEMP 'flutter'
+          git clone --depth 1 --branch $env:FLUTTER_REF https://github.com/flutter/flutter.git $flutterRoot
+          [System.IO.File]::AppendAllText($env:GITHUB_PATH, "$flutterRoot\bin`n", [System.Text.UTF8Encoding]::new($false))
 
       - name: 获取依赖
         run: flutter pub get
@@ -43,7 +43,7 @@ jobs:
         run: flutter build windows --release
 
       - name: 打包便携版
-        shell: powershell
+        shell: pwsh
         run: |
           $arch = "${{ matrix.arch }}"
           $releaseDir = Join-Path $env:GITHUB_WORKSPACE "build\windows\$arch\runner\Release"
@@ -54,11 +54,11 @@ jobs:
           Compress-Archive -Path (Join-Path $releaseDir '*') -DestinationPath $portableZip -Force
 
       - name: 安装 Inno Setup
-        shell: powershell
+        shell: pwsh
         run: choco install innosetup --no-progress -y
 
       - name: 构建安装器
-        shell: powershell
+        shell: pwsh
         run: |
           $arch = "${{ matrix.arch }}"
           $releaseDir = Join-Path $env:GITHUB_WORKSPACE "build\windows\$arch\runner\Release"
@@ -70,7 +70,7 @@ jobs:
           )
           $iscc = $isccCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $iscc) {
-            throw '找不到 Inno Setup 编译器 ISCC.exe'
+            throw 'Inno Setup compiler ISCC.exe was not found'
           }
           & $iscc `
             "/DAppArch=$arch" `
@@ -110,12 +110,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
 
-      - name: 安装 Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          cache: true
+      - name: 安装 Flutter SDK
+        shell: bash
+        run: |
+          flutter_root="$RUNNER_TEMP/flutter"
+          git clone --depth 1 --branch "$FLUTTER_REF" https://github.com/flutter/flutter.git "$flutter_root"
+          echo "$flutter_root/bin" >> "$GITHUB_PATH"
 
       - name: 获取依赖
         run: flutter pub get
@@ -145,12 +145,12 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 安装 Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          cache: true
+      - name: 安装 Flutter SDK
+        shell: bash
+        run: |
+          flutter_root="$RUNNER_TEMP/flutter"
+          git clone --depth 1 --branch "$FLUTTER_REF" https://github.com/flutter/flutter.git "$flutter_root"
+          echo "$flutter_root/bin" >> "$GITHUB_PATH"
 
       - name: 获取依赖
         run: flutter pub get
@@ -176,12 +176,12 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 安装 Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          cache: true
+      - name: 安装 Flutter SDK
+        shell: bash
+        run: |
+          flutter_root="$RUNNER_TEMP/flutter"
+          git clone --depth 1 --branch "$FLUTTER_REF" https://github.com/flutter/flutter.git "$flutter_root"
+          echo "$flutter_root/bin" >> "$GITHUB_PATH"
 
       - name: 获取依赖
         run: flutter pub get
