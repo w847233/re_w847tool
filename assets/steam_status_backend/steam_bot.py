@@ -33,6 +33,10 @@ from steam.core.crypto import rsa_publickey, pkcs1v15_encrypt
 logger = logging.getLogger(__name__)
 
 ALLOWED_PERSONA_STATE_FLAGS = sum(flag.value for flag in EPersonaStateFlag)
+RICH_PRESENCE_PERSONA_FLAG = EPersonaStateFlag.HasRichPresence.value
+MAX_RICH_PRESENCE_KEYS = 20
+MAX_RICH_PRESENCE_KEY_BYTES = 64
+MAX_RICH_PRESENCE_VALUE_BYTES = 256
 
 # 常见的 Steam 错误代码中文对照
 ERESULT_DESCRIPTIONS = {
@@ -87,6 +91,33 @@ def _format_error_with_details(message: str, details: dict | None = None) -> str
     if not visible_items:
         return message
     return f"{message}\nCM 返回详情：{'; '.join(visible_items)}"
+
+
+def _truncate_utf8(value: str, max_bytes: int) -> str:
+    """按 Steam Rich Presence 字节限制截断，避免切断 UTF-8 字符。"""
+    raw = value.encode("utf-8")
+    if len(raw) <= max_bytes:
+        return value
+    return raw[:max_bytes].decode("utf-8", errors="ignore")
+
+
+def _sanitize_rich_presence_values(values: dict[str, str] | None) -> dict[str, str]:
+    """清洗额外 Rich Presence KV，避免非法 key/value 被 CM 静默丢弃。"""
+    if not values:
+        return {}
+
+    cleaned: dict[str, str] = {}
+    for raw_key, raw_value in values.items():
+        key = str(raw_key).strip()
+        if not key or key == "steam_display":
+            continue
+        if len(key.encode("utf-8")) > MAX_RICH_PRESENCE_KEY_BYTES:
+            logger.warning("跳过过长的 Rich Presence key：%s", key)
+            continue
+        value = _truncate_utf8(str(raw_value), MAX_RICH_PRESENCE_VALUE_BYTES)
+        if value:
+            cleaned[key] = value
+    return cleaned
 
 NON_STEAM_GAME_ID = 0x8000000000000000
 CM_DIRECTORY_URL = "https://api.steampowered.com/ISteamDirectory/GetCMList/v1/"
@@ -913,23 +944,34 @@ def _build_games_played_msg(
 def _build_rich_presence_msg(
     rich_text: str,
     friend_steamids: list[int],
+    app_id: int | None,
     status_text: str = "",
+    rich_presence_values: dict[str, str] | None = None,
 ) -> MsgProto:
     """构建 Rich Presence 上传消息。
 
     rich_text 是 token key（'#' 开头）。
-    status_text 是可选的自定义文字，作为 raw 字符串嵌入（不需要 localization）。
+    status_text 会写入默认 status key，额外占位符由 rich_presence_values 提供。
     friend_steamids 是好友 SteamID 列表（必须填写）。
+    app_id 写入 protobuf header.routing_appid，否则 CM 无法可靠关联游戏配置。
 
     VDF binary 格式说明：
     根节点必须是空字符串 ''（参考 SteamKit2 SetRichPresence 实现），
     不能是 'RP'。Steam CM 只接受根节点为空字符串的格式。
     """
     msg = MsgProto(EMsg.ClientRichPresenceUpload)
+    if app_id is not None:
+        msg.header.routing_appid = int(app_id)
     kv: dict = {"steam_display": rich_text}
     if status_text:
-        # status 字段作为 raw text fallback（当 token 无法解析时也能显示）
-        kv["status"] = status_text
+        kv["status"] = _truncate_utf8(status_text, MAX_RICH_PRESENCE_VALUE_BYTES)
+    for key, value in _sanitize_rich_presence_values(rich_presence_values).items():
+        if key in kv:
+            continue
+        if len(kv) >= MAX_RICH_PRESENCE_KEYS:
+            logger.warning("Rich Presence key 数量超过 Steam 限制，已跳过：%s", key)
+            break
+        kv[key] = value
     # 根节点必须是空字符串（Steam CM 要求）
     rp_data = {"": kv}
     msg.body.rich_presence_kv = vdf.binary_dumps(rp_data)
@@ -937,9 +979,14 @@ def _build_rich_presence_msg(
         msg.body.steamid_broadcast.append(sid)
     return msg
 
-def _build_clear_rich_presence_msg(friend_steamids: list[int]) -> MsgProto:
+def _build_clear_rich_presence_msg(
+    friend_steamids: list[int],
+    app_id: int | None = None,
+) -> MsgProto:
     """清除 Rich Presence，通知所有好友。"""
     msg = MsgProto(EMsg.ClientRichPresenceUpload)
+    if app_id is not None:
+        msg.header.routing_appid = int(app_id)
     # 清除 RP：空根节点 + 空 KV
     msg.body.rich_presence_kv = vdf.binary_dumps({"": {}})
     for sid in friend_steamids:
