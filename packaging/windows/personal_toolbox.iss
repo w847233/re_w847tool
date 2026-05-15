@@ -40,9 +40,6 @@ WizardStyle=modern
 CloseApplications=no
 UsePreviousAppDir=no
 
-[Languages]
-Name: "simplifiedchinese"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
-
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面图标"; GroupDescription: "附加任务"
 
