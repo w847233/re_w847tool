@@ -39,7 +39,8 @@ const toolCategories = <ToolCategory>[
   ToolCategory(id: 'network', name: '网络', order: 4),
   ToolCategory(id: 'media', name: '媒体', order: 5),
   ToolCategory(id: 'system', name: '系统', order: 6),
-  ToolCategory(id: 'utility', name: '实用', order: 7),
+  ToolCategory(id: 'finance', name: '金融', order: 7),
+  ToolCategory(id: 'utility', name: '实用', order: 8),
 ];
 
 const toolDefinitions = <ToolDefinition>[
@@ -122,6 +123,15 @@ const toolDefinitions = <ToolDefinition>[
     description: 'Windows 专属系统快捷操作',
     icon: Icons.desktop_windows_outlined,
     route: '/tools/systemControl',
+    syncEnabled: false,
+  ),
+  ToolDefinition(
+    id: 'exchangeRate',
+    categoryId: 'finance',
+    name: '汇率换算',
+    description: '常见货币实时汇率与历史涨跌',
+    icon: Icons.currency_exchange_outlined,
+    route: '/tools/exchangeRate',
     syncEnabled: false,
   ),
   ToolDefinition(

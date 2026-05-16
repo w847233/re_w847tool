@@ -20,7 +20,6 @@
 
 - `便签`：记录临时想法和常用信息。
 - `记账`：记录收入、支出和备注。
-- `记账 / 支付宝导入`：支持通过支付宝开放平台下载商户离线账单并导入本地账目。
 
 ### 任务与时间
 
@@ -69,9 +68,6 @@
 - `xml`
 - `cryptography`
 - `stun`
-- `archive`
-- `csv`
-- `gbk_codec`
 
 ## 运行环境
 
@@ -130,6 +126,15 @@ flutter run -d windows
 `Add-AppxPackage -ExternalLocation` 把包身份关联到 Debug 输出目录，最后启动同一份
 Debug exe。源码中的 `windows\runner\runner.exe.manifest` 仍保持普通桌面 manifest，
 不会把 debug identity 带进 Release 构建。
+
+脚本会用 `.dart_tool\personal_toolbox_pub_get.sha256` 记录 `pubspec.yaml` 和
+`pubspec.lock` 的依赖指纹；指纹变化或缺少 `.dart_tool\package_config.json` 时才执行
+`flutter pub get`。依赖未变化时会使用 `flutter build windows --debug --no-pub`，
+避免每次 Debug 包身份启动都重新解析依赖。需要强制刷新依赖时可运行：
+
+```powershell
+.\run_debug_msix.bat -ForcePubGet
+```
 
 首次运行时，脚本可能会弹出 UAC，用于把本机调试签名证书导入当前机器的
 `TrustedPeople` 和 `Root` 证书存储；否则 Windows 会拒绝安装自签名 MSIX。
@@ -216,7 +221,6 @@ lib/
     network/                   DNS / NAT 相关能力
     system_control/            Windows 系统控制能力
     steam_status/              Steam 状态工具与侧车控制
-    ledger/                    账单导入等业务逻辑
     home/                      主页布局与小组件定义
 android/                      Android 伴随端入口与权限声明
 assets/
@@ -254,7 +258,6 @@ dart run build_runner build --delete-conflicting-outputs
 - `test/widget_test.dart`
 - `test/database_sync_test.dart`
 - `test/sync_crypto_service_test.dart`
-- `test/alipay_bill_import_service_test.dart`
 
 可按需执行：
 
@@ -265,7 +268,6 @@ flutter test
 ## 已知前提与注意事项
 
 - `Steam 状态`首次启动可能较慢，因为会准备 Python 运行时与依赖。
-- `支付宝账单导入`依赖支付宝开放平台参数，且账单接口存在时间范围限制。
 - `NAT隧道打洞`、`DNS` 设置这类功能依赖真实本机网络环境，在测试环境与 CI 中未必能完整复现。
 - 项目目前的 `pubspec.yaml` 描述字段仍是默认值 `A new Flutter project.`；如果后续需要对外发布，建议一并更新元信息。
 

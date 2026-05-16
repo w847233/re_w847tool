@@ -53,6 +53,29 @@ void EnableFullDpiSupportIfAvailable(HWND hwnd) {
   FreeLibrary(user32_module);
 }
 
+HICON LoadAppIcon(int width, int height) {
+  return reinterpret_cast<HICON>(
+      LoadImage(GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_APP_ICON),
+                IMAGE_ICON, width, height, LR_SHARED));
+}
+
+void SetAppIcon(HWND window) {
+  // 任务栏和 Alt-Tab 更可靠地读取窗口自身的大小图标。
+  HICON big_icon = LoadAppIcon(GetSystemMetrics(SM_CXICON),
+                               GetSystemMetrics(SM_CYICON));
+  HICON small_icon = LoadAppIcon(GetSystemMetrics(SM_CXSMICON),
+                                 GetSystemMetrics(SM_CYSMICON));
+
+  if (big_icon) {
+    SendMessage(window, WM_SETICON, ICON_BIG,
+                reinterpret_cast<LPARAM>(big_icon));
+  }
+  if (small_icon) {
+    SendMessage(window, WM_SETICON, ICON_SMALL,
+                reinterpret_cast<LPARAM>(small_icon));
+  }
+}
+
 }  // namespace
 
 // Manages the Win32Window's window class registration.
@@ -144,6 +167,7 @@ bool Win32Window::Create(const std::wstring& title,
     return false;
   }
 
+  SetAppIcon(window);
   UpdateTheme(window);
 
   return OnCreate();

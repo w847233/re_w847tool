@@ -312,9 +312,9 @@ String _localizedConnectionMessage({
     return nativeMessage.isEmpty ? reason : '$reason $nativeMessage';
   }
   return switch (method) {
-    'enableConnection' => '已启用蓝牙音频接收，请在手机上选择这台电脑作为音频输出。',
+    'enableConnection' => '设备已连接，可以开始播放蓝牙音频。',
     'openConnection' => '蓝牙音频连接已打开，手机音频应通过 Windows 默认播放设备输出。',
-    'closeConnection' => '已关闭蓝牙音频播放，接收授权仍保留。',
+    'closeConnection' => '已断开音频连接。再次播放前请重新连接设备。',
     _ => '蓝牙音频连接操作已完成。',
   };
 }

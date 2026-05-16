@@ -8,8 +8,8 @@ import 'package:intl/intl.dart';
 
 import '../data/app_database.dart';
 import '../data/database_provider.dart';
+import '../exchange_rate/sina_forex_market_service.dart';
 import '../get_token/get_token_tool.dart';
-import '../ledger/alipay_bill_import_service.dart';
 import '../network/dns_leak_tool.dart';
 import '../network/nat_traversal_tool.dart';
 import '../phone_manager/phone_manager_tool.dart';
@@ -41,6 +41,7 @@ class ToolPage extends StatelessWidget {
                 'ledger' => const LedgerTool(),
                 'countdown' => const CountdownTool(),
                 'converter' => const ConverterTool(),
+                'exchangeRate' => const ExchangeRateTool(),
                 'password' => const PasswordTool(),
                 'getToken' => const GetTokenTool(),
                 'pomodoro' => const PomodoroTool(),
@@ -368,28 +369,12 @@ class LedgerTool extends ConsumerStatefulWidget {
 class _LedgerToolState extends ConsumerState<LedgerTool> {
   final _amountController = TextEditingController();
   final _noteController = TextEditingController();
-  final _alipayAppIdController = TextEditingController();
-  final _alipayPrivateKeyController = TextEditingController();
-  final _alipayAppAuthTokenController = TextEditingController();
-  final _alipayBillTypeController = TextEditingController(text: 'trade');
-  final _alipayService = AlipayBillImportService();
-  DateTime _alipayBillDate = DateUtils.dateOnly(
-    DateTime.now().subtract(const Duration(days: 1)),
-  );
   String _type = '支出';
-  String _alipayImportType = '收入';
-  bool _isImportingAlipay = false;
-  String _alipayStatus = '支付宝接口只能获取商户离线账单，日账单最早为昨天。';
 
   @override
   void dispose() {
     _amountController.dispose();
     _noteController.dispose();
-    _alipayAppIdController.dispose();
-    _alipayPrivateKeyController.dispose();
-    _alipayAppAuthTokenController.dispose();
-    _alipayBillTypeController.dispose();
-    _alipayService.close();
     super.dispose();
   }
 
@@ -443,68 +428,6 @@ class _LedgerToolState extends ConsumerState<LedgerTool> {
                 ),
               ],
             ),
-            const Divider(height: 32),
-            Text('支付宝账单导入', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _alipayAppIdController,
-              decoration: const InputDecoration(labelText: 'App ID'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _alipayPrivateKeyController,
-              minLines: 3,
-              maxLines: 5,
-              decoration: const InputDecoration(labelText: '应用私钥 PEM'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _alipayAppAuthTokenController,
-              decoration: const InputDecoration(
-                labelText: 'App Auth Token（服务商代商户可选）',
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _alipayBillTypeController,
-              decoration: const InputDecoration(labelText: '账单类型'),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: _isImportingAlipay ? null : _pickAlipayBillDate,
-              icon: const Icon(Icons.event_outlined),
-              label: Text(DateFormat('yyyy-MM-dd').format(_alipayBillDate)),
-            ),
-            const SizedBox(height: 12),
-            SegmentedButton<String>(
-              selected: {_alipayImportType},
-              segments: const [
-                ButtonSegment(value: '收入', label: Text('导入为收入')),
-                ButtonSegment(value: '支出', label: Text('导入为支出')),
-              ],
-              onSelectionChanged: _isImportingAlipay
-                  ? null
-                  : (value) => setState(() => _alipayImportType = value.first),
-            ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton.icon(
-                onPressed: _isImportingAlipay
-                    ? null
-                    : () => _importAlipayBill(database),
-                icon: _isImportingAlipay
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.cloud_download_outlined),
-                label: Text(_isImportingAlipay ? '导入中' : '获取并导入'),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(_alipayStatus, style: const TextStyle(color: AppColors.muted)),
           ],
         ),
       ),
@@ -596,73 +519,6 @@ class _LedgerToolState extends ConsumerState<LedgerTool> {
         },
       ),
     );
-  }
-
-  Future<void> _pickAlipayBillDate() async {
-    final today = DateUtils.dateOnly(DateTime.now());
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _alipayBillDate.isBefore(today)
-          ? _alipayBillDate
-          : today.subtract(const Duration(days: 1)),
-      firstDate: DateTime(2020),
-      lastDate: today.subtract(const Duration(days: 1)),
-    );
-    if (picked != null) {
-      setState(() => _alipayBillDate = DateUtils.dateOnly(picked));
-    }
-  }
-
-  Future<void> _importAlipayBill(AppDatabase database) async {
-    setState(() {
-      _isImportingAlipay = true;
-      _alipayStatus = '正在向支付宝请求账单下载地址...';
-    });
-    try {
-      final result = await _alipayService.fetchRecentTradeBill(
-        AlipayBillImportRequest(
-          appId: _alipayAppIdController.text,
-          privateKeyPem: _alipayPrivateKeyController.text,
-          appAuthToken: _alipayAppAuthTokenController.text,
-          billType: _alipayBillTypeController.text,
-          billDate: _alipayBillDate,
-        ),
-      );
-      var imported = 0;
-      for (final record in result.records) {
-        final type = _ledgerTypeForAlipayRecord(record);
-        final inserted = await database.importLedgerEntry(
-          sourceId: record.sourceId,
-          type: type,
-          amount: record.amount,
-          note: record.toLedgerNote(),
-          occurredAt: record.occurredAt,
-        );
-        if (inserted) {
-          imported++;
-        }
-      }
-      final skipped = result.records.length - imported;
-      setState(() {
-        _alipayStatus =
-            '已读取 ${result.records.length} 条，导入 $imported 条，跳过重复 $skipped 条。';
-      });
-    } on AlipayBillImportException catch (error) {
-      setState(() => _alipayStatus = error.message);
-    } catch (error) {
-      setState(() => _alipayStatus = '支付宝账单导入失败：$error');
-    } finally {
-      if (mounted) {
-        setState(() => _isImportingAlipay = false);
-      }
-    }
-  }
-
-  String _ledgerTypeForAlipayRecord(AlipayBillRecord record) {
-    if (!record.isRefund) {
-      return _alipayImportType;
-    }
-    return _alipayImportType == '收入' ? '支出' : '收入';
   }
 }
 
@@ -775,6 +631,656 @@ class _CountdownToolState extends ConsumerState<CountdownTool> {
       return '就是今天';
     }
     return '已过去 ${days.abs()} 天';
+  }
+}
+
+class ExchangeRateTool extends ConsumerStatefulWidget {
+  const ExchangeRateTool({super.key});
+
+  @override
+  ConsumerState<ExchangeRateTool> createState() => _ExchangeRateToolState();
+}
+
+class _ExchangeRateToolState extends ConsumerState<ExchangeRateTool> {
+  static const _panelBg = Color(0xFF07090D);
+  static const _panelSurface = Color(0xFF10141C);
+  static const _panelBorder = Color(0xFF263142);
+  static const _panelText = Color(0xFFE8EEF7);
+  static const _panelMuted = Color(0xFF92A0B4);
+  static const _riseColor = Color(0xFFFF5A67);
+  static const _fallColor = Color(0xFF24C46B);
+
+  final _amountController = TextEditingController(text: '1');
+  String _fromCode = 'CNY';
+  final List<String> _targetCodes = ['USD'];
+  ExchangeTimeRange _range = exchangeTimeRanges.first;
+  final Map<String, Future<ExchangeRateSeries>> _seriesFutures = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _amountController.addListener(_onAmountChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        setState(_refreshAll);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _amountController
+      ..removeListener(_onAmountChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final amount = double.tryParse(_amountController.text) ?? 0;
+    return AppPanel(
+      padding: EdgeInsets.zero,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: _panelBg,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: _panelBorder),
+        ),
+        child: Theme(
+          data: Theme.of(context).copyWith(
+            canvasColor: _panelSurface,
+            colorScheme: Theme.of(
+              context,
+            ).colorScheme.copyWith(primary: _panelText, onSurface: _panelText),
+            inputDecorationTheme: const InputDecorationTheme(
+              labelStyle: TextStyle(color: _panelMuted),
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: _panelBorder),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: _panelText),
+              ),
+            ),
+          ),
+          child: DefaultTextStyle(
+            style: const TextStyle(color: _panelText),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _ExchangeHeader(
+                  amountController: _amountController,
+                  fromCode: _fromCode,
+                  targetCodes: _targetCodes,
+                  onFromChanged: _changeFromCode,
+                  onSwap: _swapPrimaryTarget,
+                  onAddTarget: _addTarget,
+                  onTargetChanged: _changeTargetCode,
+                  onRemoveTarget: _removeTarget,
+                ),
+                const SizedBox(height: 18),
+                for (var i = 0; i < _targetCodes.length; i++) ...[
+                  _ExchangeChartCard(
+                    key: ValueKey(
+                      'exchange-chart-${_fromCode}_${_targetCodes[i]}',
+                    ),
+                    fromCode: _fromCode,
+                    toCode: _targetCodes[i],
+                    amount: amount,
+                    seriesFuture: _seriesFutures[_targetCodes[i]],
+                    showRangeSelector: i == 0,
+                    selectedRange: _range,
+                    onRangeChanged: _changeRange,
+                    onRetry: () =>
+                        setState(() => _refreshTarget(_targetCodes[i])),
+                  ),
+                  if (i != _targetCodes.length - 1) const SizedBox(height: 12),
+                ],
+                const SizedBox(height: 12),
+                const Text(
+                  '数据源：新浪财经外汇。非官方接口仅供参考，以实际交易报价为准。',
+                  style: TextStyle(color: _panelMuted, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _onAmountChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _changeFromCode(String code) {
+    setState(() {
+      _fromCode = code;
+      _targetCodes.removeWhere((target) => target == code);
+      if (_targetCodes.isEmpty) {
+        _targetCodes.add(_firstAvailableTarget() ?? 'USD');
+      }
+      _refreshAll();
+    });
+  }
+
+  void _changeTargetCode(int index, String code) {
+    if (_targetCodes.contains(code) && _targetCodes[index] != code) {
+      ScaffoldMessenger.of(
+        context,
+      ).showLatestSnackBar(const SnackBar(content: Text('该货币已添加')));
+      return;
+    }
+    setState(() {
+      _targetCodes[index] = code;
+      _refreshTarget(code);
+    });
+  }
+
+  void _addTarget() {
+    final next = _firstAvailableTarget();
+    if (next == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showLatestSnackBar(const SnackBar(content: Text('没有更多可添加的货币')));
+      return;
+    }
+    setState(() {
+      _targetCodes.add(next);
+      _refreshTarget(next);
+    });
+  }
+
+  void _removeTarget(int index) {
+    if (_targetCodes.length == 1) {
+      ScaffoldMessenger.of(
+        context,
+      ).showLatestSnackBar(const SnackBar(content: Text('至少保留一种兑换货币')));
+      return;
+    }
+    setState(() {
+      final removed = _targetCodes.removeAt(index);
+      _seriesFutures.remove(removed);
+    });
+  }
+
+  void _swapPrimaryTarget() {
+    final nextFrom = _targetCodes.first;
+    setState(() {
+      final previousFrom = _fromCode;
+      _fromCode = nextFrom;
+      _targetCodes[0] = previousFrom;
+      final seen = <String>{};
+      _targetCodes.removeWhere(
+        (target) => !seen.add(target) || target == _fromCode,
+      );
+      if (_targetCodes.isEmpty) {
+        _targetCodes.add(_firstAvailableTarget() ?? 'USD');
+      }
+      _refreshAll();
+    });
+  }
+
+  void _changeRange(ExchangeTimeRange range) {
+    setState(() {
+      _range = range;
+      _refreshAll();
+    });
+  }
+
+  void _refreshAll() {
+    for (final target in _targetCodes) {
+      _seriesFutures[target] = _loadSeries(target);
+    }
+  }
+
+  void _refreshTarget(String target) {
+    _seriesFutures[target] = _loadSeries(target);
+  }
+
+  Future<ExchangeRateSeries> _loadSeries(String target) {
+    return ref
+        .read(sinaForexMarketServiceProvider)
+        .fetchSeries(fromCode: _fromCode, toCode: target, range: _range);
+  }
+
+  String? _firstAvailableTarget() {
+    for (final code in exchangeCurrencies.map((currency) => currency.code)) {
+      if (code != _fromCode && !_targetCodes.contains(code)) {
+        return code;
+      }
+    }
+    return null;
+  }
+}
+
+class _ExchangeHeader extends StatelessWidget {
+  const _ExchangeHeader({
+    required this.amountController,
+    required this.fromCode,
+    required this.targetCodes,
+    required this.onFromChanged,
+    required this.onSwap,
+    required this.onAddTarget,
+    required this.onTargetChanged,
+    required this.onRemoveTarget,
+  });
+
+  final TextEditingController amountController;
+  final String fromCode;
+  final List<String> targetCodes;
+  final ValueChanged<String> onFromChanged;
+  final VoidCallback onSwap;
+  final VoidCallback onAddTarget;
+  final void Function(int index, String code) onTargetChanged;
+  final ValueChanged<int> onRemoveTarget;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: _ExchangeRateToolState._panelSurface,
+        border: Border.all(color: _ExchangeRateToolState._panelBorder),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '汇率换算',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: _ExchangeRateToolState._panelText,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                SizedBox(
+                  width: 180,
+                  child: TextField(
+                    controller: amountController,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(
+                      color: _ExchangeRateToolState._panelText,
+                    ),
+                    decoration: const InputDecoration(labelText: '金额'),
+                  ),
+                ),
+                SizedBox(
+                  width: 220,
+                  child: _CurrencyDropdown(
+                    label: '卖出货币',
+                    value: fromCode,
+                    excluded: const {},
+                    onChanged: onFromChanged,
+                  ),
+                ),
+                IconButton.filledTonal(
+                  tooltip: '互换卖出货币与第一种兑换货币',
+                  onPressed: onSwap,
+                  icon: const Icon(Icons.swap_horiz),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Column(
+              children: [
+                for (var i = 0; i < targetCodes.length; i++)
+                  Padding(
+                    padding: EdgeInsets.only(top: i == 0 ? 0 : 10),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _CurrencyDropdown(
+                            label: '兑换货币',
+                            value: targetCodes[i],
+                            excluded: {fromCode},
+                            onChanged: (code) => onTargetChanged(i, code),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          tooltip: '移除兑换货币',
+                          onPressed: () => onRemoveTarget(i),
+                          icon: const Icon(Icons.delete_outline),
+                          color: _ExchangeRateToolState._panelMuted,
+                        ),
+                        if (i == targetCodes.length - 1)
+                          IconButton.filled(
+                            tooltip: '添加兑换货币',
+                            onPressed: onAddTarget,
+                            icon: const Icon(Icons.add),
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CurrencyDropdown extends StatelessWidget {
+  const _CurrencyDropdown({
+    required this.label,
+    required this.value,
+    required this.excluded,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String value;
+  final Set<String> excluded;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<String>(
+      initialValue: value,
+      dropdownColor: _ExchangeRateToolState._panelSurface,
+      style: const TextStyle(color: _ExchangeRateToolState._panelText),
+      decoration: InputDecoration(labelText: label),
+      items: [
+        for (final currency in exchangeCurrencies)
+          if (!excluded.contains(currency.code) || currency.code == value)
+            DropdownMenuItem(value: currency.code, child: Text(currency.label)),
+      ],
+      onChanged: (next) {
+        if (next != null) {
+          onChanged(next);
+        }
+      },
+    );
+  }
+}
+
+class _ExchangeChartCard extends StatelessWidget {
+  const _ExchangeChartCard({
+    super.key,
+    required this.fromCode,
+    required this.toCode,
+    required this.amount,
+    required this.seriesFuture,
+    required this.showRangeSelector,
+    required this.selectedRange,
+    required this.onRangeChanged,
+    required this.onRetry,
+  });
+
+  final String fromCode;
+  final String toCode;
+  final double amount;
+  final Future<ExchangeRateSeries>? seriesFuture;
+  final bool showRangeSelector;
+  final ExchangeTimeRange selectedRange;
+  final ValueChanged<ExchangeTimeRange> onRangeChanged;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: _ExchangeRateToolState._panelSurface,
+        border: Border.all(color: _ExchangeRateToolState._panelBorder),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: FutureBuilder<ExchangeRateSeries>(
+          future: seriesFuture,
+          builder: (context, snapshot) {
+            final series = snapshot.data;
+            final change = series?.change;
+            final trendColor = change == null
+                ? _ExchangeRateToolState._panelMuted
+                : change.isUp
+                ? _ExchangeRateToolState._riseColor
+                : _ExchangeRateToolState._fallColor;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '$fromCode / $toCode',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
+                                  color: _ExchangeRateToolState._panelText,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            series == null
+                                ? '正在获取新浪财经行情...'
+                                : '${amount.toStringAsFixed(2)} $fromCode = ${(amount * series.latestRate).toStringAsFixed(4)} $toCode',
+                            style: const TextStyle(
+                              color: _ExchangeRateToolState._panelMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (showRangeSelector)
+                      SizedBox(
+                        width: 150,
+                        child: DropdownButtonFormField<ExchangeTimeRange>(
+                          initialValue: selectedRange,
+                          dropdownColor: _ExchangeRateToolState._panelSurface,
+                          style: const TextStyle(
+                            color: _ExchangeRateToolState._panelText,
+                          ),
+                          decoration: const InputDecoration(labelText: '总时间'),
+                          items: [
+                            for (final range in exchangeTimeRanges)
+                              DropdownMenuItem(
+                                value: range,
+                                child: Text(range.label),
+                              ),
+                          ],
+                          onChanged: (range) {
+                            if (range != null) {
+                              onRangeChanged(range);
+                            }
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                if (snapshot.connectionState == ConnectionState.waiting)
+                  const SizedBox(
+                    height: 178,
+                    child: Center(
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                else if (snapshot.hasError)
+                  _ExchangeErrorState(error: snapshot.error, onRetry: onRetry)
+                else if (series == null || series.points.isEmpty)
+                  _ExchangeErrorState(error: '该货币对暂时无法获取行情。', onRetry: onRetry)
+                else ...[
+                  Row(
+                    children: [
+                      Text(
+                        series.latestRate.toStringAsFixed(6),
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(
+                              color: _ExchangeRateToolState._panelText,
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        _formatPercent(change!.percentChange),
+                        style: TextStyle(
+                          color: trendColor,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Semantics(
+                    label:
+                        '$fromCode 到 $toCode ${selectedRange.label}涨跌幅 ${_formatPercent(change.percentChange)}',
+                    child: SizedBox(
+                      height: 170,
+                      child: CustomPaint(
+                        painter: _ExchangeLineChartPainter(
+                          points: series.points,
+                          lineColor: trendColor,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${_formatPointTime(series.points.first.time)} - ${_formatPointTime(series.points.last.time)} · ${series.source}',
+                    style: const TextStyle(
+                      color: _ExchangeRateToolState._panelMuted,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  String _formatPercent(double value) {
+    final sign = value >= 0 ? '+' : '';
+    return '$sign${value.toStringAsFixed(2)}%';
+  }
+
+  String _formatPointTime(DateTime time) {
+    return DateFormat('yyyy-MM-dd HH:mm').format(time.toLocal());
+  }
+}
+
+class _ExchangeErrorState extends StatelessWidget {
+  const _ExchangeErrorState({required this.error, required this.onRetry});
+
+  final Object? error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 178,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF190D12),
+        border: Border.all(color: _ExchangeRateToolState._riseColor),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            '$error',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: _ExchangeRateToolState._panelText),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh),
+            label: const Text('重试'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExchangeLineChartPainter extends CustomPainter {
+  const _ExchangeLineChartPainter({
+    required this.points,
+    required this.lineColor,
+  });
+
+  final List<ExchangeRatePoint> points;
+  final Color lineColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rates = points.map((point) => point.rate).toList();
+    final minRate = rates.reduce(min);
+    final maxRate = rates.reduce(max);
+    final range = max(maxRate - minRate, 0.0000001);
+    final chartRect = Rect.fromLTWH(0, 8, size.width, size.height - 16);
+
+    final gridPaint = Paint()
+      ..color = _ExchangeRateToolState._panelBorder
+      ..strokeWidth = 1;
+    for (var i = 0; i < 4; i++) {
+      final y = chartRect.top + chartRect.height / 3 * i;
+      canvas.drawLine(
+        Offset(chartRect.left, y),
+        Offset(chartRect.right, y),
+        gridPaint,
+      );
+    }
+
+    final path = Path();
+    for (var i = 0; i < points.length; i++) {
+      final x = points.length == 1
+          ? chartRect.center.dx
+          : chartRect.left + chartRect.width * i / (points.length - 1);
+      final y =
+          chartRect.bottom -
+          ((points[i].rate - minRate) / range) * chartRect.height;
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+
+    final linePaint = Paint()
+      ..color = lineColor
+      ..strokeWidth = 2.4
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    canvas.drawPath(path, linePaint);
+
+    final pointPaint = Paint()..color = lineColor;
+    for (final index in [0, points.length - 1]) {
+      final x = points.length == 1
+          ? chartRect.center.dx
+          : chartRect.left + chartRect.width * index / (points.length - 1);
+      final y =
+          chartRect.bottom -
+          ((points[index].rate - minRate) / range) * chartRect.height;
+      canvas.drawCircle(Offset(x, y), 3.5, pointPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ExchangeLineChartPainter oldDelegate) {
+    return oldDelegate.points != points || oldDelegate.lineColor != lineColor;
   }
 }
 

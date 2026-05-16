@@ -1,13 +1,16 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:personal_toolbox/main.dart';
 import 'package:personal_toolbox/src/data/app_database.dart';
 import 'package:personal_toolbox/src/data/database_provider.dart';
+import 'package:personal_toolbox/src/exchange_rate/sina_forex_market_service.dart';
 import 'package:personal_toolbox/src/get_token/get_token_repository.dart';
 import 'package:personal_toolbox/src/get_token/get_token_tool.dart';
 import 'package:personal_toolbox/src/home/home_layout_repository.dart';
@@ -160,18 +163,32 @@ void main() {
     await _disposeApp(tester);
   });
 
-  testWidgets('记账页展示支付宝账单导入入口', (tester) async {
+  testWidgets('汇率换算可以添加多个兑换货币并显示独立涨跌图', (tester) async {
     await _setDesktopSize(tester);
-    await _pumpApp(tester);
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final service = _FakeSinaForexMarketService();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(database),
+          sinaForexMarketServiceProvider.overrideWithValue(service),
+        ],
+        child: const PersonalToolboxApp(),
+      ),
+    );
+    await _pumpUi(tester);
+    await tester.drag(find.byType(ListView).first, const Offset(0, -420));
+    await _pumpUi(tester);
 
-    await _tapToolNav(tester, '记账');
+    await tester.tap(find.text('汇率换算').first);
+    await _pumpUi(tester);
+    await tester.tap(find.byTooltip('添加兑换货币'));
+    await _pumpUi(tester);
 
-    expect(find.text('新增账目'), findsOneWidget);
-    expect(find.text('支付宝账单导入'), findsOneWidget);
-    expect(find.widgetWithText(TextField, 'App ID'), findsOneWidget);
-    expect(find.widgetWithText(TextField, '应用私钥 PEM'), findsOneWidget);
-    expect(find.text('获取并导入'), findsOneWidget);
-    expect(tester.takeException(), isNull);
+    expect(find.text('CNY / USD'), findsOneWidget);
+    expect(find.text('CNY / EUR'), findsOneWidget);
+    expect(find.textContaining('-7.69%'), findsOneWidget);
 
     await _disposeApp(tester);
   });
@@ -947,6 +964,52 @@ class _FakeSteamStatusController extends SteamStatusController {
   @override
   Future<void> dispose() async {
     await _database.close();
+  }
+}
+
+class _FakeSinaForexMarketService extends SinaForexMarketService {
+  _FakeSinaForexMarketService() : super(client: _NeverUsedHttpClient());
+
+  @override
+  Future<ExchangeRateSeries> fetchSeries({
+    required String fromCode,
+    required String toCode,
+    required ExchangeTimeRange range,
+  }) async {
+    final now = DateTime(2026, 5, 16, 10);
+    final rates = switch (toCode) {
+      'EUR' => (0.13, 0.12),
+      'JPY' => (20.0, 21.0),
+      _ => (0.14, 0.15),
+    };
+    final points = [
+      ExchangeRatePoint(
+        time: now.subtract(const Duration(hours: 1)),
+        rate: rates.$1,
+      ),
+      ExchangeRatePoint(time: now, rate: rates.$2),
+    ];
+    return ExchangeRateSeries(
+      fromCode: fromCode,
+      toCode: toCode,
+      points: points,
+      latestRate: points.last.rate,
+      source: SinaForexMarketService.sourceName,
+    );
+  }
+
+  @override
+  Future<Map<String, double>> fetchLatestUsdLegs(
+    Set<String> currencyCodes,
+  ) async {
+    return const {'USD': 1, 'CNY': 0.14, 'EUR': 1.16};
+  }
+}
+
+class _NeverUsedHttpClient extends http.BaseClient {
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    return http.StreamedResponse(Stream<Uint8List>.empty(), 500);
   }
 }
 

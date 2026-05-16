@@ -587,7 +587,6 @@ class BluetoothAudioChannel::Impl {
               "No active audio playback connection exists for this device.")));
           return;
         }
-        connection.Close();
         result->Success(flutter::EncodableValue(ConnectionResultMap(
             true, "Success", "Closed", "Bluetooth audio playback is closed.")));
       } catch (const winrt::hresult_error& error) {
@@ -720,34 +719,12 @@ class BluetoothAudioChannel::Impl {
   }
 
   void ReleaseConnectionInternal(const std::wstring& device_id) {
-    auto connection = TakeConnectionForId(device_id);
-    if (connection) {
-      CloseIgnoringErrors(connection);
-    }
+    TakeConnectionForId(device_id);
   }
 
   void ReleaseAllConnectionsInternal() {
-    std::vector<audio::AudioPlaybackConnection> connections;
-    {
-      std::lock_guard<std::mutex> lock(connections_mutex_);
-      for (const auto& item : connections_) {
-        connections.push_back(item.second);
-      }
-      connections_.clear();
-    }
-    for (const auto& connection : connections) {
-      if (connection) {
-        CloseIgnoringErrors(connection);
-      }
-    }
-  }
-
-  void CloseIgnoringErrors(
-      const audio::AudioPlaybackConnection& connection) noexcept {
-    try {
-      connection.Close();
-    } catch (...) {
-    }
+    std::lock_guard<std::mutex> lock(connections_mutex_);
+    connections_.clear();
   }
 
   void RunWorker(std::thread worker) {

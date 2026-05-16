@@ -148,6 +148,16 @@ class _BluetoothAudioToolState extends State<BluetoothAudioTool> {
                   _ConnectionPanel(
                     selectedDevice: selectedDevice,
                     busy: _busy,
+                    onConnect: selectedDevice == null
+                        ? null
+                        : () => _runConnectionAction(
+                            () => _service.enableConnection(selectedDevice.id),
+                          ),
+                    onDisconnect: selectedDevice == null
+                        ? null
+                        : () => _runConnectionAction(
+                            () => _service.closeConnection(selectedDevice.id),
+                          ),
                     onOpen: selectedDevice == null
                         ? null
                         : () => _runConnectionAction(
@@ -548,12 +558,16 @@ class _ConnectionPanel extends StatelessWidget {
   const _ConnectionPanel({
     required this.selectedDevice,
     required this.busy,
+    required this.onConnect,
+    required this.onDisconnect,
     required this.onOpen,
     required this.onClose,
   });
 
   final BluetoothAudioDevice? selectedDevice;
   final bool busy;
+  final VoidCallback? onConnect;
+  final VoidCallback? onDisconnect;
   final VoidCallback? onOpen;
   final VoidCallback? onClose;
 
@@ -561,7 +575,12 @@ class _ConnectionPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final device = selectedDevice;
     final isPlaying = device?.state == BluetoothAudioConnectionState.opened;
-    final canStart = device != null && !busy && !isPlaying;
+    final isConnected =
+        device?.state == BluetoothAudioConnectionState.enabled || isPlaying;
+    final canConnect = device != null && !busy && !isConnected;
+    final canDisconnect = device != null && !busy && isConnected;
+    final canStart =
+        device?.state == BluetoothAudioConnectionState.enabled && !busy;
     final canClose = device != null && !busy && isPlaying;
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -589,7 +608,7 @@ class _ConnectionPanel extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               device == null
-                  ? '选择设备后，点击开始播放即可让 Windows 接收手机蓝牙音频。'
+                  ? '选择设备后，先在当前设备中点击连接。'
                   : _operationHint(device.state),
               style: const TextStyle(color: AppColors.muted),
             ),
@@ -598,10 +617,22 @@ class _ConnectionPanel extends StatelessWidget {
               spacing: 10,
               runSpacing: 10,
               children: [
+                if (isConnected)
+                  FilledButton.icon(
+                    onPressed: canDisconnect ? onDisconnect : null,
+                    icon: _busyIconOr(Icons.link_off, busy),
+                    label: Text(busy ? '处理中...' : '断开'),
+                  )
+                else
+                  FilledButton.icon(
+                    onPressed: canConnect ? onConnect : null,
+                    icon: _busyIconOr(Icons.link, busy),
+                    label: Text(busy ? '处理中...' : '连接'),
+                  ),
                 FilledButton.icon(
                   onPressed: canStart ? onOpen : null,
-                  icon: _busyIconOr(Icons.play_arrow, busy && !isPlaying),
-                  label: Text(busy && !isPlaying ? '连接中...' : '开始播放'),
+                  icon: _busyIconOr(Icons.play_arrow, busy && isConnected),
+                  label: Text(busy && isConnected ? '处理中...' : '开始播放'),
                 ),
                 if (isPlaying)
                   FilledButton.icon(
@@ -626,9 +657,9 @@ class _ConnectionPanel extends StatelessWidget {
   String _operationHint(BluetoothAudioConnectionState state) {
     return switch (state) {
       BluetoothAudioConnectionState.opened => '连接已打开，手机音频应通过 Windows 默认播放设备输出。',
-      BluetoothAudioConnectionState.enabled => '接收已启用。点击开始播放，或在手机蓝牙输出中选择这台电脑。',
-      BluetoothAudioConnectionState.closed => '连接已关闭。点击开始播放即可重新接收手机音频。',
-      BluetoothAudioConnectionState.unknown => '设备状态未知。可以尝试刷新设备后再开始播放。',
+      BluetoothAudioConnectionState.enabled => '设备已连接。点击开始播放，或在手机蓝牙输出中选择这台电脑。',
+      BluetoothAudioConnectionState.closed => '设备尚未连接。请先在当前设备中点击连接。',
+      BluetoothAudioConnectionState.unknown => '设备状态未知。请先刷新设备，或重新点击连接。',
     };
   }
 

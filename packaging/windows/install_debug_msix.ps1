@@ -3,7 +3,8 @@ param(
     [switch]$NoLaunch,
     [switch]$SkipRestrictedCapabilities,
     [switch]$DryRun,
-    [switch]$NoElevate
+    [switch]$NoElevate,
+    [switch]$ForcePubGet
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,9 +26,15 @@ $DisplayName = "Personal Toolbox Debug"
 $DebugOutput = Join-Path $ProjectRoot "build\windows\x64\runner\Debug"
 $PackageRoot = Join-Path $ProjectRoot "build\windows_debug_msix"
 $ManifestRoot = Join-Path $PackageRoot "identity"
+$AssetsRoot = Join-Path $ManifestRoot "Assets"
 $ManifestPath = Join-Path $ManifestRoot "AppxManifest.xml"
 $ExeManifestPath = Join-Path $PackageRoot "personal_toolbox_debug.exe.manifest"
 $PackagePath = Join-Path $PackageRoot "personal_toolbox_debug.msix"
+$PackageConfigPath = Join-Path $ProjectRoot ".dart_tool\package_config.json"
+$PubGetStampPath = Join-Path $ProjectRoot ".dart_tool\personal_toolbox_pub_get.sha256"
+$PubspecPath = Join-Path $ProjectRoot "pubspec.yaml"
+$PubspecLockPath = Join-Path $ProjectRoot "pubspec.lock"
+$AppIconPath = Join-Path $ProjectRoot "windows\runner\resources\app_icon.ico"
 
 function Test-IsAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -54,6 +61,86 @@ function Find-WindowsSdkTool {
         throw "Could not find $Name. Install the Windows 10/11 SDK and retry."
     }
     return $tool.FullName
+}
+
+function Get-FileSha256 {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $stream = [System.IO.File]::OpenRead((Resolve-Path -LiteralPath $Path))
+    try {
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $hashBytes = $sha256.ComputeHash($stream)
+            return ([System.BitConverter]::ToString($hashBytes) -replace "-", "")
+        } finally {
+            $sha256.Dispose()
+        }
+    } finally {
+        $stream.Dispose()
+    }
+}
+
+function Test-PubGetRequired {
+    if ($ForcePubGet) {
+        Write-Host "[personal_toolbox] ForcePubGet was requested."
+        return $true
+    }
+
+    if (-not (Test-Path -LiteralPath $PackageConfigPath)) {
+        Write-Host "[personal_toolbox] package_config.json is missing."
+        return $true
+    }
+
+    if (-not (Test-Path -LiteralPath $PubGetStampPath)) {
+        Write-Host "[personal_toolbox] dependency stamp is missing."
+        return $true
+    }
+
+    $currentFingerprint = Get-DependencyFingerprint
+    $recordedFingerprint = Get-Content -LiteralPath $PubGetStampPath -Raw
+    if ($currentFingerprint.Trim() -ne $recordedFingerprint.Trim()) {
+        Write-Host "[personal_toolbox] pubspec dependency fingerprint changed."
+        return $true
+    }
+
+    return $false
+}
+
+function Get-DependencyFingerprint {
+    $parts = @()
+    foreach ($path in @($PubspecPath, $PubspecLockPath)) {
+        if (Test-Path -LiteralPath $path) {
+            $parts += "$([System.IO.Path]::GetFileName($path))=$(Get-FileSha256 -Path $path)"
+        } else {
+            $parts += "$([System.IO.Path]::GetFileName($path))=<missing>"
+        }
+    }
+    return $parts -join "`n"
+}
+
+function Update-PubGetStamp {
+    $stampDirectory = Split-Path -Parent $PubGetStampPath
+    New-Item -ItemType Directory -Force -Path $stampDirectory | Out-Null
+    Set-Content -LiteralPath $PubGetStampPath -Value (Get-DependencyFingerprint) -Encoding ascii
+}
+
+function Build-WindowsDebug {
+    if (Test-PubGetRequired) {
+        Write-Host "[personal_toolbox] Running flutter pub get..."
+        & $FlutterBin pub get
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
+        Update-PubGetStamp
+    } else {
+        Write-Host "[personal_toolbox] Dependencies are unchanged; skipping flutter pub get."
+    }
+
+    Write-Host "[personal_toolbox] Building Windows debug output..."
+    & $FlutterBin build windows --debug --no-pub
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
 }
 
 function Ensure-DebugCertificate {
@@ -239,6 +326,37 @@ $capabilityXml
     Set-Content -LiteralPath $ManifestPath -Value $manifest -Encoding utf8
 }
 
+function New-DebugAssets {
+    if (-not (Test-Path -LiteralPath $AppIconPath)) {
+        throw "App icon was not found: $AppIconPath"
+    }
+
+    Add-Type -AssemblyName System.Drawing
+    New-Item -ItemType Directory -Force -Path $AssetsRoot | Out-Null
+
+    $assets = @(
+        @{ Name = "StoreLogo.png"; Size = 50 },
+        @{ Name = "Square44x44Logo.png"; Size = 44 },
+        @{ Name = "Square150x150Logo.png"; Size = 150 }
+    )
+
+    foreach ($asset in $assets) {
+        $outputPath = Join-Path $AssetsRoot $asset.Name
+        $icon = [System.Drawing.Icon]::new($AppIconPath, [int]$asset.Size, [int]$asset.Size)
+        try {
+            $bitmap = $icon.ToBitmap()
+            try {
+                # MSIX 的 Shell 图标来自包内 PNG 资源；Debug exe 的 ico 资源不会自动补齐这些文件。
+                $bitmap.Save($outputPath, [System.Drawing.Imaging.ImageFormat]::Png)
+            } finally {
+                $bitmap.Dispose()
+            }
+        } finally {
+            $icon.Dispose()
+        }
+    }
+}
+
 function New-DebugExeManifest {
     $manifest = @"
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -277,11 +395,7 @@ function Apply-DebugExeManifest {
 Set-Location $ProjectRoot
 
 if (-not $SkipBuild) {
-    Write-Host "[personal_toolbox] Building Windows debug output..."
-    & $FlutterBin build windows --debug
-    if ($LASTEXITCODE -ne 0) {
-        exit $LASTEXITCODE
-    }
+    Build-WindowsDebug
 }
 
 if (-not (Test-Path -LiteralPath (Join-Path $DebugOutput "personal_toolbox.exe"))) {
@@ -290,6 +404,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $DebugOutput "personal_toolbox.exe")
 
 New-Item -ItemType Directory -Force -Path $PackageRoot | Out-Null
 New-DebugManifest
+New-DebugAssets
 New-DebugExeManifest
 
 $makeAppx = Find-WindowsSdkTool -Name "MakeAppx.exe"
