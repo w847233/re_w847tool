@@ -1,12 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../data/app_database.dart';
 import '../data/database_provider.dart';
+import '../exchange_rate/exchange_home_widget_repository.dart';
+import '../exchange_rate/sina_forex_market_service.dart';
 import '../home/home_layout_repository.dart';
 import '../theme/app_theme.dart';
+import '../ui/deferred_navigation.dart';
 
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
@@ -21,6 +25,12 @@ class _HomePageState extends ConsumerState<HomePage> {
   @override
   Widget build(BuildContext context) {
     final layout = ref.watch(homeWidgetLayoutProvider);
+    final layoutItems = layout.when(
+      data: (items) => items,
+      loading: () => const <HomeWidgetLayoutItem>[],
+      error: (_, _) => const <HomeWidgetLayoutItem>[],
+    );
+    final hiddenItems = layoutItems.where((item) => !item.visible).toList();
 
     return SafeArea(
       child: Column(
@@ -30,6 +40,14 @@ class _HomePageState extends ConsumerState<HomePage> {
             onToggleEdit: () => setState(() => _editing = !_editing),
             onReset: _editing
                 ? () => ref.read(homeLayoutRepositoryProvider).resetLayout()
+                : null,
+            hiddenItems: hiddenItems,
+            onRestoreHidden: _editing && layoutItems.isNotEmpty
+                ? (widgetId) => ref
+                      .read(homeLayoutRepositoryProvider)
+                      .saveLayout(
+                        _setWidgetVisibility(layoutItems, widgetId, true),
+                      )
                 : null,
           ),
           Expanded(
@@ -67,6 +85,20 @@ class _HomePageState extends ConsumerState<HomePage> {
       ),
     );
   }
+
+  List<HomeWidgetLayoutItem> _setWidgetVisibility(
+    List<HomeWidgetLayoutItem> source,
+    String widgetId,
+    bool visible,
+  ) {
+    return [
+      for (final item in source)
+        if (item.widgetId == widgetId)
+          item.copyWith(visible: visible)
+        else
+          item,
+    ];
+  }
 }
 
 class _HomeTopBar extends StatelessWidget {
@@ -74,14 +106,41 @@ class _HomeTopBar extends StatelessWidget {
     required this.editing,
     required this.onToggleEdit,
     required this.onReset,
+    required this.hiddenItems,
+    required this.onRestoreHidden,
   });
 
   final bool editing;
   final VoidCallback onToggleEdit;
   final VoidCallback? onReset;
+  final List<HomeWidgetLayoutItem> hiddenItems;
+  final ValueChanged<String>? onRestoreHidden;
 
   @override
   Widget build(BuildContext context) {
+    final actions = <Widget>[
+      if (onReset != null) ...[
+        OutlinedButton.icon(
+          onPressed: onReset,
+          icon: const Icon(Icons.refresh),
+          label: const Text('重置布局'),
+        ),
+        const SizedBox(width: 10),
+      ],
+      if (editing) ...[
+        _HiddenWidgetsMenu(
+          hiddenItems: hiddenItems,
+          onRestore: onRestoreHidden,
+        ),
+        const SizedBox(width: 10),
+      ],
+      FilledButton.icon(
+        onPressed: onToggleEdit,
+        icon: Icon(editing ? Icons.check : Icons.edit_outlined),
+        label: Text(editing ? '完成编辑' : '编辑主页'),
+      ),
+    ];
+
     return Container(
       height: 65,
       padding: const EdgeInsets.symmetric(horizontal: 28),
@@ -93,21 +152,67 @@ class _HomeTopBar extends StatelessWidget {
           Expanded(
             child: Text('主页', style: Theme.of(context).textTheme.titleLarge),
           ),
-          if (onReset != null) ...[
-            OutlinedButton.icon(
-              onPressed: onReset,
-              icon: const Icon(Icons.refresh),
-              label: const Text('重置布局'),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(mainAxisSize: MainAxisSize.min, children: actions),
+              ),
             ),
-            const SizedBox(width: 10),
-          ],
-          FilledButton.icon(
-            onPressed: onToggleEdit,
-            icon: Icon(editing ? Icons.check : Icons.edit_outlined),
-            label: Text(editing ? '完成编辑' : '编辑主页'),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _HiddenWidgetsMenu extends StatelessWidget {
+  const _HiddenWidgetsMenu({
+    required this.hiddenItems,
+    required this.onRestore,
+  });
+
+  final List<HomeWidgetLayoutItem> hiddenItems;
+  final ValueChanged<String>? onRestore;
+
+  @override
+  Widget build(BuildContext context) {
+    return MenuAnchor(
+      menuChildren: hiddenItems.isEmpty
+          ? [
+              const MenuItemButton(
+                onPressed: null,
+                leadingIcon: Icon(Icons.visibility_outlined),
+                child: Text('暂无隐藏组件'),
+              ),
+            ]
+          : [
+              for (final item in hiddenItems)
+                MenuItemButton(
+                  onPressed: onRestore == null
+                      ? null
+                      : () => onRestore!(item.widgetId),
+                  leadingIcon: Icon(dashboardWidgetById(item.widgetId).icon),
+                  child: Text('恢复 ${dashboardWidgetById(item.widgetId).title}'),
+                ),
+            ],
+      builder: (context, controller, child) {
+        return OutlinedButton.icon(
+          onPressed: () {
+            if (controller.isOpen) {
+              controller.close();
+            } else {
+              controller.open();
+            }
+          },
+          icon: const Icon(Icons.visibility_off_outlined),
+          label: Text(
+            hiddenItems.isEmpty ? '已隐藏组件' : '已隐藏组件 (${hiddenItems.length})',
+          ),
+        );
+      },
     );
   }
 }
@@ -140,22 +245,23 @@ class _WelcomePanel extends StatelessWidget {
             runSpacing: 10,
             children: [
               FilledButton.icon(
-                onPressed: () => context.go('/tools/todos'),
+                onPressed: () => goAfterTapFeedback(context, '/tools/todos'),
                 icon: const Icon(Icons.add_task_outlined),
                 label: const Text('添加待办'),
               ),
               OutlinedButton.icon(
-                onPressed: () => context.go('/tools/notes'),
+                onPressed: () => goAfterTapFeedback(context, '/tools/notes'),
                 icon: const Icon(Icons.note_add_outlined),
                 label: const Text('写便签'),
               ),
               OutlinedButton.icon(
-                onPressed: () => context.go('/settings/about'),
+                onPressed: () => goAfterTapFeedback(context, '/settings/about'),
                 icon: const Icon(Icons.cloud_sync_outlined),
                 label: const Text('查看同步说明'),
               ),
               OutlinedButton.icon(
-                onPressed: () => context.go('/tools/steamStatus'),
+                onPressed: () =>
+                    goAfterTapFeedback(context, '/tools/steamStatus'),
                 icon: const Icon(Icons.sports_esports_outlined),
                 label: const Text('Steam 状态'),
               ),
@@ -191,6 +297,13 @@ class _HomeWidgetBoard extends ConsumerWidget {
                 _MobileHomeWidgetTile(
                   item: visibleItems[index],
                   editing: editing,
+                  onHide: () => onLayoutChanged(
+                    _setVisibility(
+                      layout,
+                      visibleItems[index].widgetId,
+                      visible: false,
+                    ),
+                  ),
                   onMoveUp: index == 0
                       ? null
                       : () => onLayoutChanged(
@@ -229,6 +342,13 @@ class _HomeWidgetBoard extends ConsumerWidget {
                 editing: editing,
                 onAccept: (draggedId) =>
                     onLayoutChanged(_move(layout, draggedId, index)),
+                onHide: () => onLayoutChanged(
+                  _setVisibility(
+                    layout,
+                    visibleItems[index].widgetId,
+                    visible: false,
+                  ),
+                ),
                 onResize: (size) => onLayoutChanged(
                   _resize(layout, visibleItems[index].widgetId, size),
                 ),
@@ -269,6 +389,20 @@ class _HomeWidgetBoard extends ConsumerWidget {
         if (item.widgetId == widgetId) item.copyWith(size: size) else item,
     ];
   }
+
+  List<HomeWidgetLayoutItem> _setVisibility(
+    List<HomeWidgetLayoutItem> source,
+    String widgetId, {
+    required bool visible,
+  }) {
+    return [
+      for (final item in source)
+        if (item.widgetId == widgetId)
+          item.copyWith(visible: visible)
+        else
+          item,
+    ];
+  }
 }
 
 class _DesktopHomeWidgetTile extends StatelessWidget {
@@ -276,12 +410,14 @@ class _DesktopHomeWidgetTile extends StatelessWidget {
     required this.item,
     required this.editing,
     required this.onAccept,
+    required this.onHide,
     required this.onResize,
   });
 
   final HomeWidgetLayoutItem item;
   final bool editing;
   final ValueChanged<String> onAccept;
+  final VoidCallback onHide;
   final ValueChanged<HomeWidgetSize> onResize;
 
   @override
@@ -293,9 +429,11 @@ class _DesktopHomeWidgetTile extends StatelessWidget {
       size: item.size,
       editing: editing,
       allowedSizes: definition.allowedSizes,
+      onHide: onHide,
       onResize: onResize,
       child: _WidgetBody(
         widgetId: item.widgetId,
+        size: item.size,
         compact: item.size == HomeWidgetSize.small,
       ),
     );
@@ -342,6 +480,7 @@ class _MobileHomeWidgetTile extends StatelessWidget {
   const _MobileHomeWidgetTile({
     required this.item,
     required this.editing,
+    required this.onHide,
     required this.onMoveUp,
     required this.onMoveDown,
     required this.onResize,
@@ -349,6 +488,7 @@ class _MobileHomeWidgetTile extends StatelessWidget {
 
   final HomeWidgetLayoutItem item;
   final bool editing;
+  final VoidCallback onHide;
   final VoidCallback? onMoveUp;
   final VoidCallback? onMoveDown;
   final ValueChanged<HomeWidgetSize> onResize;
@@ -363,6 +503,7 @@ class _MobileHomeWidgetTile extends StatelessWidget {
       fullWidth: true,
       editing: editing,
       allowedSizes: definition.allowedSizes,
+      onHide: onHide,
       onResize: onResize,
       mobileControls: editing
           ? Row(
@@ -381,7 +522,11 @@ class _MobileHomeWidgetTile extends StatelessWidget {
               ],
             )
           : null,
-      child: _WidgetBody(widgetId: item.widgetId, compact: false),
+      child: _WidgetBody(
+        widgetId: item.widgetId,
+        size: item.size,
+        compact: false,
+      ),
     );
   }
 }
@@ -394,6 +539,7 @@ class _DashboardCard extends StatelessWidget {
     required this.editing,
     required this.child,
     this.allowedSizes = const [],
+    this.onHide,
     this.onResize,
     this.mobileControls,
     this.fullWidth = false,
@@ -405,6 +551,7 @@ class _DashboardCard extends StatelessWidget {
   final bool editing;
   final Widget child;
   final List<HomeWidgetSize> allowedSizes;
+  final VoidCallback? onHide;
   final ValueChanged<HomeWidgetSize>? onResize;
   final Widget? mobileControls;
   final bool fullWidth;
@@ -421,44 +568,85 @@ class _DashboardCard extends StatelessWidget {
       child: Card(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: fullWidth ? MainAxisSize.min : MainAxisSize.max,
-            children: [
-              Row(
-                children: [
-                  Icon(icon, size: 20, color: AppColors.accent),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      title,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final compactHeader = constraints.maxWidth < 180;
+              final actionConstraints = BoxConstraints.tightFor(
+                width: compactHeader ? 24 : 40,
+                height: compactHeader ? 24 : 40,
+              );
+              final compactPadding = EdgeInsets.zero;
+              final headerActions = [
+                if (mobileControls != null) mobileControls!,
+                if (editing && onHide != null)
+                  IconButton(
+                    tooltip: '隐藏小组件',
+                    onPressed: onHide,
+                    padding: compactPadding,
+                    constraints: actionConstraints,
+                    visualDensity: VisualDensity.compact,
+                    iconSize: compactHeader ? 16 : 20,
+                    icon: const Icon(Icons.visibility_off_outlined),
+                  ),
+                if (editing && allowedSizes.isNotEmpty)
+                  PopupMenuButton<HomeWidgetSize>(
+                    tooltip: '调整大小',
+                    padding: compactPadding,
+                    constraints: actionConstraints,
+                    icon: Icon(
+                      Icons.aspect_ratio_outlined,
+                      size: compactHeader ? 16 : 20,
+                    ),
+                    onSelected: onResize,
+                    itemBuilder: (context) => [
+                      for (final option in allowedSizes)
+                        PopupMenuItem(
+                          value: option,
+                          child: Text(
+                            '${option.label} ${option == size ? '（当前）' : ''}',
+                          ),
+                        ),
+                    ],
+                  ),
+                if (editing)
+                  Padding(
+                    padding: EdgeInsets.only(right: compactHeader ? 0 : 4),
+                    child: Icon(
+                      Icons.drag_indicator,
+                      color: AppColors.muted,
+                      size: compactHeader ? 16 : 20,
                     ),
                   ),
-                  ?mobileControls,
-                  if (editing && allowedSizes.isNotEmpty)
-                    PopupMenuButton<HomeWidgetSize>(
-                      tooltip: '调整大小',
-                      icon: const Icon(Icons.aspect_ratio_outlined),
-                      onSelected: onResize,
-                      itemBuilder: (context) => [
-                        for (final option in allowedSizes)
-                          PopupMenuItem(
-                            value: option,
-                            child: Text(
-                              '${option.label} ${option == size ? '（当前）' : ''}',
-                            ),
-                          ),
-                      ],
-                    ),
-                  if (editing)
-                    const Icon(Icons.drag_indicator, color: AppColors.muted),
+              ];
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: fullWidth ? MainAxisSize.min : MainAxisSize.max,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        icon,
+                        size: compactHeader ? 16 : 20,
+                        color: AppColors.accent,
+                      ),
+                      SizedBox(width: compactHeader ? 6 : 8),
+                      Expanded(
+                        child: Text(
+                          title,
+                          overflow: TextOverflow.ellipsis,
+                          style: compactHeader
+                              ? Theme.of(context).textTheme.titleSmall
+                              : Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ),
+                      ...headerActions,
+                    ],
+                  ),
+                  SizedBox(height: compactHeader ? 8 : 12),
+                  if (fullWidth) child else Flexible(child: child),
                 ],
-              ),
-              const SizedBox(height: 12),
-              if (fullWidth) child else Flexible(child: child),
-            ],
+              );
+            },
           ),
         ),
       ),
@@ -467,17 +655,34 @@ class _DashboardCard extends StatelessWidget {
 }
 
 class _WidgetBody extends ConsumerWidget {
-  const _WidgetBody({required this.widgetId, required this.compact});
+  const _WidgetBody({
+    required this.widgetId,
+    required this.size,
+    required this.compact,
+  });
 
   final String widgetId;
+  final HomeWidgetSize size;
   final bool compact;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final database = ref.watch(appDatabaseProvider);
+    final exchangeWidgetConfigState = ref.watch(
+      exchangeHomeWidgetConfigProvider,
+    );
     return switch (widgetId) {
       'todayTodos' => _TodayTodosWidget(database: database, compact: compact),
       'recentNotes' => _RecentNotesWidget(database: database, compact: compact),
+      'exchangeSnapshot' => exchangeWidgetConfigState.when(
+        data: (config) => _ExchangeSnapshotWidget(size: size, config: config),
+        loading: () =>
+            const Text('正在加载汇率配置...', style: TextStyle(color: AppColors.muted)),
+        error: (_, _) => _ExchangeSnapshotWidget(
+          size: size,
+          config: const ExchangeHomeWidgetConfig(),
+        ),
+      ),
       'monthlyLedger' => _MonthlyLedgerWidget(database: database),
       'countdown' => _CountdownWidget(database: database, compact: compact),
       'pomodoro' => _PomodoroStatsWidget(database: database),
@@ -551,6 +756,271 @@ class _RecentNotesWidget extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+enum _ExchangeTrend { up, down, flat }
+
+class _ExchangeSnapshotWidget extends ConsumerStatefulWidget {
+  const _ExchangeSnapshotWidget({required this.size, required this.config});
+
+  final HomeWidgetSize size;
+  final ExchangeHomeWidgetConfig config;
+
+  @override
+  ConsumerState<_ExchangeSnapshotWidget> createState() =>
+      _ExchangeSnapshotWidgetState();
+}
+
+class _ExchangeSnapshotWidgetState
+    extends ConsumerState<_ExchangeSnapshotWidget> {
+  Timer? _timer;
+  int _requestId = 0;
+  Map<String, double> _ratesByCode = const {};
+  Map<String, _ExchangeTrend> _trendsByCode = const {};
+  DateTime? _lastUpdatedAt;
+  String? _errorMessage;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _restartPolling();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ExchangeSnapshotWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.config != widget.config) {
+      setState(() {
+        _ratesByCode = const {};
+        _trendsByCode = const {};
+        _lastUpdatedAt = null;
+        _errorMessage = null;
+        _loading = true;
+      });
+      _restartPolling();
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final compact = widget.size == HomeWidgetSize.wide;
+    final maxTargets = widget.size == HomeWidgetSize.large ? 4 : 2;
+    final visibleTargets = widget.config.targetCodes.take(maxTargets).toList();
+    final hiddenCount =
+        widget.config.targetCodes.length - visibleTargets.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '${ExchangeHomeWidgetConfig.defaultAmount.toStringAsFixed(0)} ${widget.config.fromCode}',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  fontSize: compact ? 13 : null,
+                  height: compact ? 1.05 : null,
+                ),
+              ),
+            ),
+            Text(
+              '${widget.config.refreshSeconds}s',
+              style: TextStyle(
+                color: AppColors.muted,
+                fontSize: compact ? 11 : 12,
+                height: 1,
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: compact ? 4 : 6),
+        if (_loading && _ratesByCode.isEmpty)
+          Text(
+            '正在获取汇率...',
+            style: TextStyle(
+              color: AppColors.muted,
+              fontSize: compact ? 11 : 12,
+              height: 1,
+            ),
+          )
+        else ...[
+          for (final code in visibleTargets) ...[
+            _ExchangeSnapshotRow(
+              code: code,
+              value: _ratesByCode[code],
+              trend: _trendsByCode[code] ?? _ExchangeTrend.flat,
+              compact: compact,
+            ),
+            SizedBox(height: compact ? 2 : 4),
+          ],
+          if (hiddenCount > 0)
+            Text(
+              '还有 $hiddenCount 个币种',
+              style: TextStyle(
+                color: AppColors.muted,
+                fontSize: compact ? 11 : 12,
+                height: 1,
+              ),
+            ),
+        ],
+        SizedBox(height: compact ? 2 : 4),
+        Text(
+          _buildFooterText(),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: _errorMessage == null ? AppColors.muted : AppColors.bad,
+            fontSize: compact ? 11 : 12,
+            height: 1,
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _restartPolling() {
+    _timer?.cancel();
+    _refreshRates(resetLoading: true);
+    _timer = Timer.periodic(
+      Duration(seconds: widget.config.refreshSeconds),
+      (_) => _refreshRates(),
+    );
+  }
+
+  Future<void> _refreshRates({bool resetLoading = false}) async {
+    final requestId = ++_requestId;
+    if (resetLoading && mounted) {
+      setState(() {
+        _loading = true;
+        _errorMessage = null;
+      });
+    }
+
+    try {
+      final requiredCodes = {
+        'USD',
+        widget.config.fromCode,
+        ...widget.config.targetCodes,
+      };
+      final legs = await ref
+          .read(sinaForexMarketServiceProvider)
+          .fetchLatestUsdLegs(requiredCodes);
+      if (!mounted || requestId != _requestId) {
+        return;
+      }
+      final fromLeg = legs[widget.config.fromCode];
+      if (fromLeg == null || fromLeg <= 0) {
+        throw const SinaForexMarketException('基准货币汇率缺失。');
+      }
+
+      final nextRates = <String, double>{};
+      final nextTrends = <String, _ExchangeTrend>{};
+      for (final code in widget.config.targetCodes) {
+        final toLeg = legs[code];
+        if (toLeg == null || toLeg <= 0) {
+          throw SinaForexMarketException('$code 汇率缺失。');
+        }
+        final nextValue =
+            ExchangeHomeWidgetConfig.defaultAmount * fromLeg / toLeg;
+        nextRates[code] = nextValue;
+        final previous = _ratesByCode[code];
+        nextTrends[code] = _compareTrend(previous, nextValue);
+      }
+
+      setState(() {
+        _ratesByCode = nextRates;
+        _trendsByCode = nextTrends;
+        _lastUpdatedAt = DateTime.now();
+        _errorMessage = null;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted || requestId != _requestId) {
+        return;
+      }
+      setState(() {
+        _errorMessage = '更新失败，已保留上次结果';
+        _loading = false;
+      });
+    }
+  }
+
+  _ExchangeTrend _compareTrend(double? previous, double next) {
+    if (previous == null) {
+      return _ExchangeTrend.flat;
+    }
+    const epsilon = 0.0000001;
+    if ((next - previous).abs() <= epsilon) {
+      return _ExchangeTrend.flat;
+    }
+    return next > previous ? _ExchangeTrend.up : _ExchangeTrend.down;
+  }
+
+  String _buildFooterText() {
+    if (_errorMessage != null) {
+      return _errorMessage!;
+    }
+    final updatedAt = _lastUpdatedAt;
+    if (updatedAt == null) {
+      return '${widget.config.refreshSeconds} 秒刷新';
+    }
+    return '${widget.config.refreshSeconds} 秒刷新 · ${DateFormat('HH:mm:ss').format(updatedAt)}';
+  }
+}
+
+class _ExchangeSnapshotRow extends StatelessWidget {
+  const _ExchangeSnapshotRow({
+    required this.code,
+    required this.value,
+    required this.trend,
+    required this.compact,
+  });
+
+  final String code;
+  final double? value;
+  final _ExchangeTrend trend;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final valueColor = switch (trend) {
+      _ExchangeTrend.up => AppColors.bad,
+      _ExchangeTrend.down => AppColors.good,
+      _ExchangeTrend.flat => AppColors.muted,
+    };
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            code,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              fontSize: compact ? 11 : null,
+              height: compact ? 1 : null,
+            ),
+          ),
+        ),
+        SizedBox(width: compact ? 8 : 12),
+        Text(
+          value == null ? '--' : value!.toStringAsFixed(4),
+          key: ValueKey('exchange-snapshot-value-$code'),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: valueColor,
+            fontWeight: FontWeight.w700,
+            fontSize: compact ? 11 : null,
+            height: compact ? 1 : null,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -733,7 +1203,7 @@ class _QuickAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return OutlinedButton.icon(
-      onPressed: () => context.go(route),
+      onPressed: () => goAfterTapFeedback(context, route),
       icon: Icon(icon),
       label: Text(label),
     );

@@ -45,6 +45,7 @@ dependencies:
   http: ^1.6.0
   xml: ^7.0.1
   cryptography: ^2.9.0
+  pointycastle: ^4.0.0
   uuid: ^4.5.3
   intl: ^0.20.2
   stun: ^1.5.1

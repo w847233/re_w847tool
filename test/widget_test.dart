@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:typed_data';
+import 'dart:ui';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
@@ -10,16 +11,20 @@ import 'package:http/http.dart' as http;
 import 'package:personal_toolbox/main.dart';
 import 'package:personal_toolbox/src/data/app_database.dart';
 import 'package:personal_toolbox/src/data/database_provider.dart';
+import 'package:personal_toolbox/src/exchange_rate/exchange_home_widget_repository.dart';
 import 'package:personal_toolbox/src/exchange_rate/sina_forex_market_service.dart';
 import 'package:personal_toolbox/src/get_token/get_token_repository.dart';
 import 'package:personal_toolbox/src/get_token/get_token_tool.dart';
 import 'package:personal_toolbox/src/home/home_layout_repository.dart';
+import 'package:personal_toolbox/src/ledger/alipay_ledger_models.dart';
 import 'package:personal_toolbox/src/network/nat_traversal_models.dart';
 import 'package:personal_toolbox/src/network/nat_traversal_repository.dart';
 import 'package:personal_toolbox/src/network/nat_traversal_service.dart';
 import 'package:personal_toolbox/src/network/nat_traversal_tool.dart';
 import 'package:personal_toolbox/src/settings/settings_repository.dart';
 import 'package:personal_toolbox/src/sync/sync_service.dart';
+import 'package:personal_toolbox/src/theme/app_theme.dart';
+import 'package:personal_toolbox/src/ui/deferred_navigation.dart';
 import 'package:personal_toolbox/src/sync/webdav_client.dart';
 import 'package:personal_toolbox/src/steam_status/steam_status_models.dart';
 import 'package:personal_toolbox/src/steam_status/steam_status_repository.dart';
@@ -43,6 +48,12 @@ void main() {
     expect(find.text('倒数日'), findsWidgets);
     expect(find.text('番茄钟统计'), findsOneWidget);
     expect(find.text('快捷工具'), findsOneWidget);
+    expect(find.text('汇率速览'), findsOneWidget);
+    await _pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey('exchange-snapshot-value-JPY')),
+    );
+    expect(find.text('100 CNY'), findsOneWidget);
 
     await _disposeApp(tester);
   });
@@ -107,6 +118,40 @@ void main() {
 
     expect(find.byIcon(Icons.keyboard_arrow_down), findsWidgets);
     expect(tester.takeException(), isNull);
+
+    await _disposeApp(tester);
+  });
+
+  testWidgets('记账页可以保存支付宝配置并在未授权时阻止查询', (tester) async {
+    await _setDesktopSize(tester);
+    final database = await _pumpApp(tester);
+
+    await _tapToolNav(tester, '记账');
+    await tester.ensureVisible(find.text('支付宝导入'));
+    await _pumpUi(tester);
+
+    await tester.enterText(find.widgetWithText(TextField, 'appId'), '202100');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'privateKeyPem'),
+      'private-key',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'alipayPublicKeyPem'),
+      'public-key',
+    );
+    await tester.ensureVisible(find.text('保存配置'));
+    await tester.tap(find.text('保存配置'));
+    await _pumpUi(tester);
+
+    final saved = await database.getSettingValue(alipayLedgerConfigKey);
+    expect(saved, contains('202100'));
+    expect(saved, contains(defaultAlipayLedgerMethod));
+
+    await tester.ensureVisible(find.text('查询预览'));
+    await tester.tap(find.text('查询预览'));
+    await _pumpUi(tester);
+
+    expect(find.text('请先连接支付宝并完成授权'), findsOneWidget);
 
     await _disposeApp(tester);
   });
@@ -193,6 +238,178 @@ void main() {
     await _disposeApp(tester);
   });
 
+  testWidgets('汇率图表悬浮卡片会根据左右半区切换显示位置', (tester) async {
+    await _setDesktopSize(tester);
+    await _pumpApp(tester, exchangeService: _FakeSinaForexMarketService());
+
+    await _tapToolNav(tester, '汇率换算');
+    await _pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey('exchange-interactive-chart-USD')),
+    );
+
+    final chartFinder = find.byKey(
+      const ValueKey('exchange-interactive-chart-USD'),
+    );
+    final chartRect = tester.getRect(chartFinder);
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(gesture.removePointer);
+    await gesture.addPointer(location: chartRect.center);
+
+    await gesture.moveTo(
+      Offset(chartRect.left + chartRect.width * 0.25, chartRect.center.dy),
+    );
+    await tester.pump();
+
+    Rect hoverCardRect = tester.getRect(
+      find.byKey(const ValueKey('exchange-hover-card')),
+    );
+    expect(hoverCardRect.center.dx, greaterThan(chartRect.center.dx));
+
+    await gesture.moveTo(
+      Offset(chartRect.left + chartRect.width * 0.75, chartRect.center.dy),
+    );
+    await tester.pump();
+
+    hoverCardRect = tester.getRect(
+      find.byKey(const ValueKey('exchange-hover-card')),
+    );
+    expect(hoverCardRect.center.dx, lessThan(chartRect.center.dx));
+
+    await _disposeApp(tester);
+  });
+
+  testWidgets('汇率工具可以保存主页汇率小组件配置并更新主页展示', (tester) async {
+    await _setDesktopSize(tester);
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final service = _FakeSinaForexMarketService();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(database),
+          sinaForexMarketServiceProvider.overrideWithValue(service),
+        ],
+        child: const PersonalToolboxApp(),
+      ),
+    );
+    await _pumpUi(tester);
+    await _pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey('exchange-snapshot-value-USD')),
+    );
+
+    await _tapToolNav(tester, '汇率换算');
+    await tester.tap(
+      find.byKey(const ValueKey('exchange-widget-config-button')),
+    );
+    await _pumpUi(tester);
+
+    expect(find.text('主页汇率小组件'), findsOneWidget);
+    await tester.tap(find.byTooltip('删除小组件货币').last);
+    await _pumpUi(tester);
+    await tester.tap(
+      find.descendant(of: find.byType(AlertDialog), matching: find.text('保存')),
+    );
+    await _pumpUi(tester);
+
+    await _tapToolNav(tester, '主页');
+
+    expect(
+      find.byKey(const ValueKey('exchange-snapshot-value-JPY')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('exchange-snapshot-value-USD')),
+      findsNothing,
+    );
+
+    await _tapToolNav(tester, '汇率换算');
+    await tester.tap(
+      find.byKey(const ValueKey('exchange-widget-config-button')),
+    );
+    await _pumpUi(tester);
+    await tester.tap(find.byTooltip('添加小组件货币'));
+    await _pumpUi(tester);
+    await tester.tap(
+      find.descendant(of: find.byType(AlertDialog), matching: find.text('保存')),
+    );
+    await _pumpUi(tester);
+
+    final config = await ExchangeHomeWidgetRepository(database).loadConfig();
+    expect(config.targetCodes, ['JPY', 'USD']);
+
+    await _tapToolNav(tester, '主页');
+    await _pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey('exchange-snapshot-value-USD')),
+    );
+    expect(
+      find.byKey(const ValueKey('exchange-snapshot-value-USD')),
+      findsOneWidget,
+    );
+
+    await _disposeApp(tester);
+  });
+
+  testWidgets('主页汇率小组件会按涨跌显示文字颜色', (tester) async {
+    await _setDesktopSize(tester);
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    await ExchangeHomeWidgetRepository(database).saveConfig(
+      const ExchangeHomeWidgetConfig(
+        fromCode: 'CNY',
+        targetCodes: ['JPY', 'EUR'],
+        refreshSeconds: 5,
+      ),
+    );
+    final service = _FakeSinaForexMarketService(
+      latestUsdLegsResponses: [
+        const {'USD': 1, 'CNY': 0.14, 'JPY': 0.0070, 'EUR': 1.10},
+        const {'USD': 1, 'CNY': 0.14, 'JPY': 0.0069, 'EUR': 1.11},
+        const {'USD': 1, 'CNY': 0.14, 'JPY': 0.0069, 'EUR': 1.11},
+      ],
+    );
+    await _pumpApp(tester, database: database, exchangeService: service);
+    await _pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey('exchange-snapshot-value-JPY')),
+    );
+
+    Text jpyValue = tester.widget(
+      find.byKey(const ValueKey('exchange-snapshot-value-JPY')),
+    );
+    Text eurValue = tester.widget(
+      find.byKey(const ValueKey('exchange-snapshot-value-EUR')),
+    );
+    expect(jpyValue.style?.color, AppColors.muted);
+    expect(eurValue.style?.color, AppColors.muted);
+
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump();
+    jpyValue = tester.widget(
+      find.byKey(const ValueKey('exchange-snapshot-value-JPY')),
+    );
+    eurValue = tester.widget(
+      find.byKey(const ValueKey('exchange-snapshot-value-EUR')),
+    );
+    expect(jpyValue.style?.color, AppColors.bad);
+    expect(eurValue.style?.color, AppColors.good);
+
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump();
+    jpyValue = tester.widget(
+      find.byKey(const ValueKey('exchange-snapshot-value-JPY')),
+    );
+    eurValue = tester.widget(
+      find.byKey(const ValueKey('exchange-snapshot-value-EUR')),
+    );
+    expect(jpyValue.style?.color, AppColors.muted);
+    expect(eurValue.style?.color, AppColors.muted);
+
+    await _disposeApp(tester);
+  });
+
   testWidgets('导航中包含 Steam 状态工具并可进入页面', (tester) async {
     await _setDesktopSize(tester);
     final controller = _FakeSteamStatusController();
@@ -204,6 +421,9 @@ void main() {
         overrides: [
           appDatabaseProvider.overrideWithValue(database),
           steamStatusControllerProvider.overrideWithValue(controller),
+          sinaForexMarketServiceProvider.overrideWithValue(
+            _FakeSinaForexMarketService(),
+          ),
         ],
         child: const PersonalToolboxApp(),
       ),
@@ -214,9 +434,49 @@ void main() {
 
     await _tapToolNav(tester, 'Steam 状态');
 
+    await _pumpUntilFound(tester, find.text('Steam 侧车服务已就绪'));
     expect(find.text('连接与账号'), findsOneWidget);
     expect(find.text('Steam 侧车服务已就绪'), findsOneWidget);
     expect(find.text('当前未登录 Steam'), findsOneWidget);
+
+    await _disposeApp(tester);
+  });
+
+  testWidgets('工具导航会延迟挂载内容以保留点击反馈', (tester) async {
+    await _setDesktopSize(tester);
+    final controller = _FakeSteamStatusController();
+    addTearDown(controller.dispose);
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(database),
+          steamStatusControllerProvider.overrideWithValue(controller),
+          sinaForexMarketServiceProvider.overrideWithValue(
+            _FakeSinaForexMarketService(),
+          ),
+        ],
+        child: const PersonalToolboxApp(),
+      ),
+    );
+    await _pumpUi(tester);
+
+    await tester.drag(find.byType(ListView).first, const Offset(0, -180));
+    await _pumpUi(tester);
+    await tester.tap(find.text('Steam 状态').first);
+
+    await tester.pump(deferredNavigationDelay ~/ 2);
+    expect(find.text('连接与账号'), findsNothing);
+
+    await tester.pump(deferredNavigationDelay);
+    await tester.pump();
+    expect(find.text('正在打开 Steam 状态'), findsOneWidget);
+    expect(find.text('连接与账号'), findsNothing);
+
+    await tester.pump(deferredToolContentDelay);
+    await tester.pump();
+    expect(find.text('连接与账号'), findsOneWidget);
 
     await _disposeApp(tester);
   });
@@ -374,6 +634,9 @@ void main() {
         overrides: [
           appDatabaseProvider.overrideWithValue(database),
           webDavClientProvider.overrideWithValue(client),
+          sinaForexMarketServiceProvider.overrideWithValue(
+            _FakeSinaForexMarketService(),
+          ),
         ],
         child: const PersonalToolboxApp(),
       ),
@@ -424,6 +687,9 @@ void main() {
         overrides: [
           appDatabaseProvider.overrideWithValue(database),
           syncServiceProvider.overrideWithValue(syncService),
+          sinaForexMarketServiceProvider.overrideWithValue(
+            _FakeSinaForexMarketService(),
+          ),
         ],
         child: const PersonalToolboxApp(),
       ),
@@ -480,6 +746,9 @@ void main() {
         overrides: [
           appDatabaseProvider.overrideWithValue(database),
           syncServiceProvider.overrideWithValue(syncService),
+          sinaForexMarketServiceProvider.overrideWithValue(
+            _FakeSinaForexMarketService(),
+          ),
         ],
         child: const PersonalToolboxApp(),
       ),
@@ -752,6 +1021,9 @@ void main() {
         overrides: [
           appDatabaseProvider.overrideWithValue(database),
           steamStatusControllerProvider.overrideWithValue(controller),
+          sinaForexMarketServiceProvider.overrideWithValue(
+            _FakeSinaForexMarketService(),
+          ),
         ],
         child: const PersonalToolboxApp(),
       ),
@@ -792,6 +1064,9 @@ void main() {
         overrides: [
           appDatabaseProvider.overrideWithValue(database),
           steamStatusControllerProvider.overrideWithValue(controller),
+          sinaForexMarketServiceProvider.overrideWithValue(
+            _FakeSinaForexMarketService(),
+          ),
         ],
         child: const PersonalToolboxApp(),
       ),
@@ -829,6 +1104,9 @@ void main() {
         overrides: [
           appDatabaseProvider.overrideWithValue(database),
           steamStatusControllerProvider.overrideWithValue(controller),
+          sinaForexMarketServiceProvider.overrideWithValue(
+            _FakeSinaForexMarketService(),
+          ),
         ],
         child: const PersonalToolboxApp(),
       ),
@@ -855,16 +1133,28 @@ void main() {
   });
 }
 
-Future<AppDatabase> _pumpApp(WidgetTester tester) async {
-  final database = AppDatabase(NativeDatabase.memory());
+Future<AppDatabase> _pumpApp(
+  WidgetTester tester, {
+  AppDatabase? database,
+  SinaForexMarketService? exchangeService,
+}) async {
+  final resolvedDatabase = database ?? AppDatabase(NativeDatabase.memory());
+  if (database == null) {
+    addTearDown(resolvedDatabase.close);
+  }
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [appDatabaseProvider.overrideWithValue(database)],
+      overrides: [
+        appDatabaseProvider.overrideWithValue(resolvedDatabase),
+        sinaForexMarketServiceProvider.overrideWithValue(
+          exchangeService ?? _FakeSinaForexMarketService(),
+        ),
+      ],
       child: const PersonalToolboxApp(),
     ),
   );
   await _pumpUi(tester);
-  return database;
+  return resolvedDatabase;
 }
 
 Future<void> _pumpUi(WidgetTester tester) async {
@@ -893,11 +1183,30 @@ Future<void> _pumpUntilFound(
 }
 
 Future<void> _tapToolNav(WidgetTester tester, String label) async {
-  await tester.drag(find.byType(ListView).first, const Offset(0, -180));
+  final navList = find.byType(ListView).first;
+  final item = find.text(label);
+  if (item.evaluate().isEmpty) {
+    for (final offset in [const Offset(0, -160), const Offset(0, 160)]) {
+      for (var i = 0; i < 12 && item.evaluate().isEmpty; i++) {
+        await tester.drag(navList, offset);
+        await _pumpUi(tester);
+      }
+      if (item.evaluate().isNotEmpty) {
+        break;
+      }
+    }
+  } else {
+    await tester.ensureVisible(item.first);
+  }
+  expect(item, findsWidgets);
+  await tester.ensureVisible(item.first);
   await _pumpUi(tester);
-  final item = find.text(label).first;
-  await tester.tap(item);
+  await tester.tap(item.first);
   await _pumpUi(tester);
+  await tester.pump(deferredNavigationDelay);
+  await tester.pump();
+  await tester.pump(deferredToolContentDelay);
+  await tester.pump();
 }
 
 Future<void> _disposeApp(WidgetTester tester) async {
@@ -968,7 +1277,13 @@ class _FakeSteamStatusController extends SteamStatusController {
 }
 
 class _FakeSinaForexMarketService extends SinaForexMarketService {
-  _FakeSinaForexMarketService() : super(client: _NeverUsedHttpClient());
+  _FakeSinaForexMarketService({
+    List<Map<String, double>> latestUsdLegsResponses = const [],
+  }) : _latestUsdLegsResponses = latestUsdLegsResponses,
+       super(client: _NeverUsedHttpClient());
+
+  final List<Map<String, double>> _latestUsdLegsResponses;
+  int _latestUsdLegIndex = 0;
 
   @override
   Future<ExchangeRateSeries> fetchSeries({
@@ -1002,7 +1317,21 @@ class _FakeSinaForexMarketService extends SinaForexMarketService {
   Future<Map<String, double>> fetchLatestUsdLegs(
     Set<String> currencyCodes,
   ) async {
-    return const {'USD': 1, 'CNY': 0.14, 'EUR': 1.16};
+    if (_latestUsdLegsResponses.isNotEmpty) {
+      final index =
+          _latestUsdLegIndex.clamp(0, _latestUsdLegsResponses.length - 1)
+              as int;
+      _latestUsdLegIndex++;
+      return _latestUsdLegsResponses[index];
+    }
+    return const {
+      'USD': 1,
+      'CNY': 0.14,
+      'EUR': 1.16,
+      'JPY': 0.006875,
+      'GBP': 1.27,
+      'HKD': 0.128,
+    };
   }
 }
 

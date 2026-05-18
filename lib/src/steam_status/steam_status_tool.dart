@@ -887,14 +887,23 @@ class _DomainPreferenceCard extends StatelessWidget {
               children: [
                 for (final ip in preference.ips)
                   FilterChip(
+                    showCheckmark: false,
                     selected: ip.selected,
                     onSelected: enabled && preference.enabled
                         ? (value) => onToggleIp(ip.address, value)
                         : null,
-                    label: Text(_domainIpLabel(ip)),
-                    avatar: Icon(
-                      ip.success ? Icons.public_outlined : Icons.error_outline,
-                      size: 16,
+                    label: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          ip.success
+                              ? Icons.public_outlined
+                              : Icons.error_outline,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(_domainIpLabel(ip)),
+                      ],
                     ),
                   ),
               ],
@@ -1068,6 +1077,7 @@ class _PersonaPanel extends StatelessWidget {
         children: [
           for (final option in steamPersonaOptions)
             ChoiceChip(
+              showCheckmark: false,
               label: Text(option.label),
               selected: option.value == currentValue,
               onSelected: (_) => onSelect(option.value),
@@ -1154,8 +1164,18 @@ class _PersonaFlagGroup extends StatelessWidget {
           children: [
             for (final option in options)
               FilterChip(
-                label: Text(option.label),
-                avatar: Text('${option.value}'),
+                showCheckmark: false,
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${option.value}',
+                      style: const TextStyle(color: AppColors.muted),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(option.label),
+                  ],
+                ),
                 tooltip: option.description,
                 selected: (currentFlags & option.value) != 0,
                 onSelected: (selected) {

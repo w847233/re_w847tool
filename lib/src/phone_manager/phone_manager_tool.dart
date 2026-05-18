@@ -513,9 +513,20 @@ class _SectionSelector extends StatelessWidget {
       children: [
         for (final section in _PhoneManagerSection.values)
           ChoiceChip(
+            showCheckmark: false,
             selected: section == current,
-            avatar: Icon(section.icon, size: 18),
-            label: Text(section.label),
+            label: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  section.icon,
+                  size: 18,
+                  color: section == current ? AppColors.fg : AppColors.muted,
+                ),
+                const SizedBox(width: 6),
+                Text(section.label),
+              ],
+            ),
             onSelected: (_) => onChanged(section),
           ),
       ],

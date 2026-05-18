@@ -2,9 +2,11 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_toolbox/src/data/app_database.dart';
+import 'package:personal_toolbox/src/exchange_rate/exchange_home_widget_repository.dart';
 import 'package:personal_toolbox/src/get_token/get_token_models.dart';
 import 'package:personal_toolbox/src/get_token/get_token_repository.dart';
 import 'package:personal_toolbox/src/home/home_layout_repository.dart';
+import 'package:personal_toolbox/src/ledger/alipay_ledger_models.dart';
 import 'package:personal_toolbox/src/network/nat_traversal_models.dart';
 import 'package:personal_toolbox/src/network/nat_traversal_repository.dart';
 import 'package:personal_toolbox/src/settings/settings_repository.dart';
@@ -205,6 +207,33 @@ void main() {
     expect(await database.getSettingValue(preferredFontWeightKey), '900');
   });
 
+  test('支付宝配置和授权令牌只保存在本机，不进入同步快照', () async {
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+
+    await database.setSettingValue(
+      alipayLedgerConfigKey,
+      '{"appId":"202100","privateKeyPem":"secret"}',
+    );
+    await database.setSettingValue(
+      alipayOAuthTokenKey,
+      '{"accessToken":"token","userId":"2088"}',
+    );
+
+    final snapshot = await database.exportPlainSnapshot();
+    final settings = snapshot['settings'] as List;
+
+    expect(
+      settings.where(
+        (row) =>
+            row is Map &&
+            (row['key'] == alipayLedgerConfigKey ||
+                row['key'] == alipayOAuthTokenKey),
+      ),
+      isEmpty,
+    );
+  });
+
   test('NAT 穿透配置和打洞规则会保存到本地设置', () async {
     final database = AppDatabase(NativeDatabase.memory());
     addTearDown(database.close);
@@ -304,8 +333,8 @@ void main() {
     addTearDown(database.close);
     final repository = HomeLayoutRepository(database);
 
-    expect(repository.parseLayout(null), hasLength(6));
-    expect(repository.parseLayout('not-json'), hasLength(6));
+    expect(repository.parseLayout(null), hasLength(7));
+    expect(repository.parseLayout('not-json'), hasLength(7));
 
     final withUnknown = repository.parseLayout(
       '{"items":[{"widgetId":"unknown","size":"large","order":0,"visible":true}]}',
@@ -315,6 +344,44 @@ void main() {
       withUnknown.map((item) => item.widgetId),
       isNot(contains('unknown')),
     );
+  });
+
+  test('主页汇率小组件配置缺失或损坏时回退到默认值', () async {
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final repository = ExchangeHomeWidgetRepository(database);
+
+    expect(repository.parseConfig(null), const ExchangeHomeWidgetConfig());
+    expect(
+      repository.parseConfig('not-json'),
+      const ExchangeHomeWidgetConfig(),
+    );
+
+    final normalized = repository.parseConfig(
+      '{"fromCode":"USD","targetCodes":["USD","EUR","EUR","XYZ"],"refreshSeconds":1}',
+    );
+    expect(normalized.fromCode, 'USD');
+    expect(normalized.targetCodes, ['EUR']);
+    expect(normalized.refreshSeconds, 5);
+  });
+
+  test('主页汇率小组件配置保存后可以恢复', () async {
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final repository = ExchangeHomeWidgetRepository(database);
+
+    await repository.saveConfig(
+      const ExchangeHomeWidgetConfig(
+        fromCode: 'USD',
+        targetCodes: ['JPY', 'EUR'],
+        refreshSeconds: 12,
+      ),
+    );
+
+    final loaded = await repository.loadConfig();
+    expect(loaded.fromCode, 'USD');
+    expect(loaded.targetCodes, ['JPY', 'EUR']);
+    expect(loaded.refreshSeconds, 12);
   });
 
   test('主页布局保存后可以恢复顺序和尺寸', () async {

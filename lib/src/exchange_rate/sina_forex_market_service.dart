@@ -21,61 +21,96 @@ const exchangeCurrencies = <ExchangeCurrency>[
 
 const exchangeTimeRanges = <ExchangeTimeRange>[
   ExchangeTimeRange(
-    id: '1h',
-    label: '1小时',
-    sinaScale: 5,
-    targetPointCount: 12,
-    usesDailyKLine: false,
+    id: '1min',
+    label: '1分',
+    strategy: ExchangeTimeRangeStrategy.minuteApi,
+    inputPointCount: 60,
+    displayPointCount: 60,
+    alignmentTolerance: Duration(minutes: 10),
+    minuteScale: 1,
   ),
   ExchangeTimeRange(
-    id: '6h',
-    label: '6小时',
-    sinaScale: 15,
-    targetPointCount: 24,
-    usesDailyKLine: false,
+    id: 'day',
+    label: '日K',
+    strategy: ExchangeTimeRangeStrategy.dailyApi,
+    inputPointCount: 90,
+    displayPointCount: 90,
+    alignmentTolerance: Duration(hours: 36),
   ),
   ExchangeTimeRange(
-    id: '1d',
-    label: '一天',
-    sinaScale: 30,
-    targetPointCount: 48,
-    usesDailyKLine: false,
+    id: 'week',
+    label: '周K',
+    strategy: ExchangeTimeRangeStrategy.dailyAggregate,
+    inputPointCount: 370,
+    displayPointCount: 52,
+    alignmentTolerance: Duration(days: 8),
+    calendarUnit: ExchangeCalendarAggregateUnit.week,
   ),
   ExchangeTimeRange(
-    id: '1w',
-    label: '一周',
-    sinaScale: 60,
-    targetPointCount: 120,
-    usesDailyKLine: false,
+    id: 'month',
+    label: '月K',
+    strategy: ExchangeTimeRangeStrategy.dailyAggregate,
+    inputPointCount: 1860,
+    displayPointCount: 60,
+    alignmentTolerance: Duration(days: 40),
+    calendarUnit: ExchangeCalendarAggregateUnit.month,
   ),
   ExchangeTimeRange(
-    id: '1m',
-    label: '一个月',
-    sinaScale: 0,
-    targetPointCount: 31,
-    usesDailyKLine: true,
+    id: 'year',
+    label: '年K',
+    strategy: ExchangeTimeRangeStrategy.dailyAggregate,
+    inputPointCount: 3653,
+    displayPointCount: 10,
+    alignmentTolerance: Duration(days: 400),
+    calendarUnit: ExchangeCalendarAggregateUnit.year,
   ),
   ExchangeTimeRange(
-    id: '6m',
-    label: '六个月',
-    sinaScale: 0,
-    targetPointCount: 186,
-    usesDailyKLine: true,
+    id: '5min',
+    label: '5分',
+    strategy: ExchangeTimeRangeStrategy.minuteApi,
+    inputPointCount: 72,
+    displayPointCount: 72,
+    alignmentTolerance: Duration(minutes: 15),
+    minuteScale: 5,
   ),
   ExchangeTimeRange(
-    id: '1y',
-    label: '一年',
-    sinaScale: 0,
-    targetPointCount: 366,
-    usesDailyKLine: true,
+    id: '15min',
+    label: '15分',
+    strategy: ExchangeTimeRangeStrategy.minuteApiWithFallbackAggregate,
+    inputPointCount: 216,
+    displayPointCount: 72,
+    alignmentTolerance: Duration(minutes: 30),
+    minuteScale: 15,
+    fallbackMinuteScale: 5,
+    aggregateMinutes: 15,
   ),
   ExchangeTimeRange(
-    id: '10y',
-    label: '十年',
-    sinaScale: 0,
-    targetPointCount: 3653,
-    usesDailyKLine: true,
-    maxDisplayPoints: 180,
+    id: '30min',
+    label: '30分',
+    strategy: ExchangeTimeRangeStrategy.minuteApi,
+    inputPointCount: 72,
+    displayPointCount: 72,
+    alignmentTolerance: Duration(minutes: 75),
+    minuteScale: 30,
+  ),
+  ExchangeTimeRange(
+    id: '60min',
+    label: '60分',
+    strategy: ExchangeTimeRangeStrategy.minuteApi,
+    inputPointCount: 96,
+    displayPointCount: 96,
+    alignmentTolerance: Duration(hours: 3),
+    minuteScale: 60,
+  ),
+  ExchangeTimeRange(
+    id: '4h',
+    label: '4H',
+    strategy: ExchangeTimeRangeStrategy.minuteAggregate,
+    inputPointCount: 240,
+    displayPointCount: 60,
+    alignmentTolerance: Duration(hours: 10),
+    minuteScale: 60,
+    aggregateMinutes: 240,
   ),
 ];
 
@@ -94,29 +129,57 @@ class ExchangeCurrency {
   String get label => '$code $name';
 }
 
+ExchangeTimeRange exchangeTimeRangeById(String id) {
+  return exchangeTimeRanges.firstWhere(
+    (range) => range.id == id,
+    orElse: () => exchangeTimeRanges.first,
+  );
+}
+
+enum ExchangeTimeRangeStrategy {
+  minuteApi,
+  minuteApiWithFallbackAggregate,
+  minuteAggregate,
+  dailyApi,
+  dailyAggregate,
+}
+
+enum ExchangeCalendarAggregateUnit { week, month, year }
+
 class ExchangeTimeRange {
   const ExchangeTimeRange({
     required this.id,
     required this.label,
-    required this.sinaScale,
-    required this.targetPointCount,
-    required this.usesDailyKLine,
+    required this.strategy,
+    required this.inputPointCount,
+    required this.displayPointCount,
+    required this.alignmentTolerance,
+    this.minuteScale,
+    this.fallbackMinuteScale,
+    this.aggregateMinutes,
+    this.calendarUnit,
     this.maxDisplayPoints,
   });
 
   final String id;
   final String label;
-  final int sinaScale;
-  final int targetPointCount;
-  final bool usesDailyKLine;
+  final ExchangeTimeRangeStrategy strategy;
+  final int inputPointCount;
+  final int displayPointCount;
+  final Duration alignmentTolerance;
+  final int? minuteScale;
+  final int? fallbackMinuteScale;
+  final int? aggregateMinutes;
+  final ExchangeCalendarAggregateUnit? calendarUnit;
   final int? maxDisplayPoints;
 
-  Duration get alignmentTolerance {
-    if (usesDailyKLine) {
-      return const Duration(hours: 36);
-    }
-    return Duration(minutes: max(10, sinaScale * 2));
-  }
+  bool get usesIntradayLabel =>
+      strategy == ExchangeTimeRangeStrategy.minuteApi ||
+      strategy == ExchangeTimeRangeStrategy.minuteApiWithFallbackAggregate ||
+      strategy == ExchangeTimeRangeStrategy.minuteAggregate;
+
+  bool get showsCalendarRange =>
+      strategy == ExchangeTimeRangeStrategy.dailyAggregate;
 }
 
 enum SinaQuoteDirection { usdPerBase, quotePerUsd }
@@ -136,10 +199,32 @@ class SinaForexSymbol {
 }
 
 class ExchangeRatePoint {
-  const ExchangeRatePoint({required this.time, required this.rate});
+  const ExchangeRatePoint({
+    required this.time,
+    required this.rate,
+    DateTime? periodStart,
+    DateTime? periodEnd,
+  }) : periodStart = periodStart ?? time,
+       periodEnd = periodEnd ?? time;
 
   final DateTime time;
   final double rate;
+  final DateTime periodStart;
+  final DateTime periodEnd;
+
+  ExchangeRatePoint copyWith({
+    DateTime? time,
+    double? rate,
+    DateTime? periodStart,
+    DateTime? periodEnd,
+  }) {
+    return ExchangeRatePoint(
+      time: time ?? this.time,
+      rate: rate ?? this.rate,
+      periodStart: periodStart ?? this.periodStart,
+      periodEnd: periodEnd ?? this.periodEnd,
+    );
+  }
 }
 
 class ExchangeRateSeries {
@@ -377,8 +462,12 @@ class SinaForexMarketService {
       final toLeg = await _fetchUsdLegSeries(toCode, range);
       return toLeg
           .map(
-            (point) =>
-                ExchangeRatePoint(time: point.time, rate: 1 / point.rate),
+            (point) => ExchangeRatePoint(
+              time: point.time,
+              rate: 1 / point.rate,
+              periodStart: point.periodStart,
+              periodEnd: point.periodEnd,
+            ),
           )
           .toList();
     }
@@ -396,40 +485,97 @@ class SinaForexMarketService {
     ExchangeTimeRange range,
   ) async {
     final symbol = _symbolForCode(currencyCode);
-    final raw = range.usesDailyKLine
-        ? await _fetchDailyKLine(symbol)
-        : await _fetchMinuteKLine(symbol, range);
-    final points = raw
-        .map(
-          (point) => ExchangeRatePoint(
-            time: point.time,
-            rate: _usdPerUnit(symbol, point.rate),
-          ),
-        )
+    final raw = await _loadRawQuoteSeries(symbol, range);
+    final converted = raw
+        .map((point) => point.copyWith(rate: _usdPerUnit(symbol, point.rate)))
         .where((point) => point.rate > 0 && point.rate.isFinite)
         .toList();
-    if (points.isEmpty) {
+    if (converted.isEmpty) {
       throw SinaForexMarketException('$currencyCode 暂无可用行情。');
     }
-    return _trimRecent(points, range.targetPointCount);
+    return _trimRecent(converted, range.displayPointCount);
   }
 
-  Future<List<ExchangeRatePoint>> _fetchMinuteKLine(
+  Future<List<ExchangeRatePoint>> _loadRawQuoteSeries(
     SinaForexSymbol symbol,
     ExchangeTimeRange range,
   ) async {
-    final varName = 'var_${symbol.symbol}_${range.sinaScale}';
+    switch (range.strategy) {
+      case ExchangeTimeRangeStrategy.minuteApi:
+        return _trimRecent(
+          await _fetchRawMinuteKLine(
+            symbol,
+            scale: range.minuteScale!,
+            datalen: range.inputPointCount,
+          ),
+          range.displayPointCount,
+        );
+      case ExchangeTimeRangeStrategy.minuteApiWithFallbackAggregate:
+        final direct = await _fetchRawMinuteKLine(
+          symbol,
+          scale: range.minuteScale!,
+          datalen: range.displayPointCount,
+        );
+        if (direct.isNotEmpty) {
+          return _trimRecent(direct, range.displayPointCount);
+        }
+        final fallback = await _fetchRawMinuteKLine(
+          symbol,
+          scale: range.fallbackMinuteScale!,
+          datalen: range.inputPointCount,
+        );
+        return _trimRecent(
+          _aggregateMinutePoints(fallback, range.aggregateMinutes!),
+          range.displayPointCount,
+        );
+      case ExchangeTimeRangeStrategy.minuteAggregate:
+        final raw = await _fetchRawMinuteKLine(
+          symbol,
+          scale: range.minuteScale!,
+          datalen: range.inputPointCount,
+        );
+        return _trimRecent(
+          _aggregateMinutePoints(raw, range.aggregateMinutes!),
+          range.displayPointCount,
+        );
+      case ExchangeTimeRangeStrategy.dailyApi:
+        return _trimRecent(
+          await _fetchDailyKLine(symbol),
+          range.displayPointCount,
+        );
+      case ExchangeTimeRangeStrategy.dailyAggregate:
+        final raw = _trimRecent(
+          await _fetchDailyKLine(symbol),
+          range.inputPointCount,
+        );
+        return _trimRecent(
+          _aggregateCalendarPoints(raw, range.calendarUnit!),
+          range.displayPointCount,
+        );
+    }
+  }
+
+  Future<List<ExchangeRatePoint>> _fetchRawMinuteKLine(
+    SinaForexSymbol symbol, {
+    required int scale,
+    required int datalen,
+  }) async {
+    final varName = 'var_${symbol.symbol}_$scale';
     final uri = Uri.https(
       'vip.stock.finance.sina.com.cn',
       '/forex/api/jsonp.php/$varName=/NewForexService.getMinKline',
       {
         'symbol': symbol.symbol,
-        'scale': range.sinaScale.toString(),
-        'datalen': max(range.targetPointCount + 20, 120).toString(),
+        'scale': scale.toString(),
+        'datalen': max(datalen + 20, 120).toString(),
       },
     );
     final response = await _get(uri);
-    return parseMinuteKLine(_decodeResponse(response.bodyBytes));
+    final source = _decodeResponse(response.bodyBytes);
+    if (_isEmptyMinutePayload(source)) {
+      return const <ExchangeRatePoint>[];
+    }
+    return parseMinuteKLine(source);
   }
 
   Future<List<ExchangeRatePoint>> _fetchDailyKLine(
@@ -498,12 +644,91 @@ class SinaForexMarketService {
       }
       final to = toLeg[toIndex];
       if (from.time.difference(to.time).abs() <= range.alignmentTolerance) {
+        final time = from.time.isAfter(to.time) ? from.time : to.time;
+        final periodStart = from.periodStart.isAfter(to.periodStart)
+            ? from.periodStart
+            : to.periodStart;
+        final periodEnd = from.periodEnd.isBefore(to.periodEnd)
+            ? from.periodEnd
+            : to.periodEnd;
         combined.add(
-          ExchangeRatePoint(time: from.time, rate: from.rate / to.rate),
+          ExchangeRatePoint(
+            time: time,
+            rate: from.rate / to.rate,
+            periodStart: periodStart,
+            periodEnd: periodEnd.isBefore(periodStart) ? time : periodEnd,
+          ),
         );
       }
     }
     return combined;
+  }
+
+  List<ExchangeRatePoint> _aggregateMinutePoints(
+    List<ExchangeRatePoint> points,
+    int bucketMinutes,
+  ) {
+    if (points.isEmpty) {
+      return const <ExchangeRatePoint>[];
+    }
+    final bucketMs = Duration(minutes: bucketMinutes).inMilliseconds;
+    final grouped = <int, List<ExchangeRatePoint>>{};
+    for (final point in points) {
+      final bucket = point.time.millisecondsSinceEpoch ~/ bucketMs;
+      grouped.putIfAbsent(bucket, () => <ExchangeRatePoint>[]).add(point);
+    }
+    final buckets = grouped.keys.toList()..sort();
+    return [
+      for (final bucket in buckets) _buildAggregatePoint(grouped[bucket]!),
+    ];
+  }
+
+  List<ExchangeRatePoint> _aggregateCalendarPoints(
+    List<ExchangeRatePoint> points,
+    ExchangeCalendarAggregateUnit unit,
+  ) {
+    if (points.isEmpty) {
+      return const <ExchangeRatePoint>[];
+    }
+    final aggregated = <ExchangeRatePoint>[];
+    var currentBucket = '';
+    var buffer = <ExchangeRatePoint>[];
+    for (final point in points) {
+      final bucket = _calendarBucketId(point.time, unit);
+      if (currentBucket.isNotEmpty && bucket != currentBucket) {
+        aggregated.add(_buildAggregatePoint(buffer));
+        buffer = <ExchangeRatePoint>[];
+      }
+      currentBucket = bucket;
+      buffer.add(point);
+    }
+    if (buffer.isNotEmpty) {
+      aggregated.add(_buildAggregatePoint(buffer));
+    }
+    return aggregated;
+  }
+
+  ExchangeRatePoint _buildAggregatePoint(List<ExchangeRatePoint> points) {
+    final first = points.first;
+    final last = points.last;
+    return ExchangeRatePoint(
+      time: last.time,
+      rate: last.rate,
+      periodStart: first.periodStart,
+      periodEnd: last.periodEnd,
+    );
+  }
+
+  String _calendarBucketId(DateTime time, ExchangeCalendarAggregateUnit unit) {
+    switch (unit) {
+      case ExchangeCalendarAggregateUnit.week:
+        final start = time.subtract(Duration(days: time.weekday - 1));
+        return '${start.year}-${start.month}-${start.day}';
+      case ExchangeCalendarAggregateUnit.month:
+        return '${time.year}-${time.month}';
+      case ExchangeCalendarAggregateUnit.year:
+        return '${time.year}';
+    }
   }
 
   List<ExchangeRatePoint> _trimRecent(
@@ -577,6 +802,11 @@ List<ExchangeRatePoint> parseDailyKLine(String source) {
 
 String _decodeResponse(List<int> bytes) {
   return utf8.decode(bytes, allowMalformed: true);
+}
+
+bool _isEmptyMinutePayload(String source) {
+  return source.contains('"msg":"data is empty"') ||
+      source.contains('"msg": "data is empty"');
 }
 
 String _extractJsonArray(String source) {

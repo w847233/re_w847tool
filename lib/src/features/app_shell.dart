@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../theme/app_theme.dart';
 import '../tools/tool_registry.dart';
+import '../ui/deferred_navigation.dart';
 
 class AppShell extends StatelessWidget {
   const AppShell({super.key, required this.child});
@@ -113,11 +114,7 @@ class _NavigationContentState extends State<_NavigationContent>
                 icon: Icons.home_outlined,
                 label: '主页',
                 selected: widget.currentPath == '/home',
-                onTap: () {
-                  final router = GoRouter.of(context);
-                  _closeDrawerIfNeeded(context);
-                  router.go('/home');
-                },
+                onTap: () => _navigateAfterFeedback(context, '/home'),
               ),
               for (final entry in groupedTools.entries)
                 _CollapsibleToolGroup(
@@ -126,11 +123,7 @@ class _NavigationContentState extends State<_NavigationContent>
                   currentPath: widget.currentPath,
                   collapsed: _collapsedCategoryIds.contains(entry.key.id),
                   onToggle: () => _toggleCategory(entry.key.id),
-                  onNavigate: (route) {
-                    final router = GoRouter.of(context);
-                    _closeDrawerIfNeeded(context);
-                    router.go(route);
-                  },
+                  onNavigate: (route) => _navigateAfterFeedback(context, route),
                 ),
             ],
           ),
@@ -141,15 +134,24 @@ class _NavigationContentState extends State<_NavigationContent>
             icon: Icons.settings_outlined,
             label: '设置',
             selected: widget.currentPath.startsWith('/settings'),
-            onTap: () {
-              final router = GoRouter.of(context);
-              _closeDrawerIfNeeded(context);
-              router.go('/settings/personalization');
-            },
+            onTap: () =>
+                _navigateAfterFeedback(context, '/settings/personalization'),
           ),
         ),
       ],
     );
+  }
+
+  void _navigateAfterFeedback(BuildContext context, String route) {
+    final drawerWasOpen = Scaffold.maybeOf(context)?.isDrawerOpen ?? false;
+    goAfterTapFeedback(
+      context,
+      route,
+      delay: drawerWasOpen
+          ? drawerDeferredNavigationDelay
+          : deferredNavigationDelay,
+    );
+    _closeDrawerIfNeeded(context);
   }
 
   void _toggleCategory(String categoryId) {
@@ -319,6 +321,7 @@ class _NavButton extends StatelessWidget {
       child: Material(
         color: selected ? AppColors.bg : Colors.transparent,
         borderRadius: BorderRadius.circular(6),
+        animationDuration: const Duration(milliseconds: 160),
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(6),
@@ -338,11 +341,9 @@ class _NavButton extends StatelessWidget {
                     child: Text(
                       label,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
+                      style: const TextStyle(
                         color: AppColors.fg,
-                        fontWeight: selected
-                            ? FontWeight.w600
-                            : FontWeight.w400,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ),

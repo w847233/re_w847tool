@@ -8,8 +8,11 @@ import 'package:intl/intl.dart';
 
 import '../data/app_database.dart';
 import '../data/database_provider.dart';
+import '../exchange_rate/exchange_home_widget_repository.dart';
 import '../exchange_rate/sina_forex_market_service.dart';
 import '../get_token/get_token_tool.dart';
+import '../ledger/alipay_ledger_models.dart';
+import '../ledger/alipay_ledger_repository.dart';
 import '../network/dns_leak_tool.dart';
 import '../network/nat_traversal_tool.dart';
 import '../phone_manager/phone_manager_tool.dart';
@@ -18,6 +21,7 @@ import '../system_control/system_control_tool.dart';
 import '../theme/app_theme.dart';
 import '../tools/tool_registry.dart';
 import '../ui/app_panel.dart';
+import '../ui/deferred_navigation.dart';
 import '../ui/latest_snack_bar.dart';
 
 class ToolPage extends StatelessWidget {
@@ -35,31 +39,100 @@ class ToolPage extends StatelessWidget {
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(28, 24, 28, 32),
-              child: switch (tool.id) {
-                'notes' => const NotesTool(),
-                'todos' => const TodosTool(),
-                'ledger' => const LedgerTool(),
-                'countdown' => const CountdownTool(),
-                'converter' => const ConverterTool(),
-                'exchangeRate' => const ExchangeRateTool(),
-                'password' => const PasswordTool(),
-                'getToken' => const GetTokenTool(),
-                'pomodoro' => const PomodoroTool(),
-                'dnsLeak' => const DnsLeakTool(),
-                'natTraversal' => const NatTraversalTool(),
-                'phoneManager' || 'bluetoothAudio' => const PhoneManagerTool(),
-                'systemControl' => const SystemControlTool(),
-                'steamStatus' => const SteamStatusTool(),
-                _ => EmptyState(
-                  icon: tool.icon,
-                  title: '工具暂不可用',
-                  message: '当前工具尚未实现，请从左侧选择其他工具。',
-                ),
-              },
+              child: _DeferredToolContent(tool: tool),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _DeferredToolContent extends StatefulWidget {
+  const _DeferredToolContent({required this.tool});
+
+  final ToolDefinition tool;
+
+  @override
+  State<_DeferredToolContent> createState() => _DeferredToolContentState();
+}
+
+class _DeferredToolContentState extends State<_DeferredToolContent> {
+  Timer? _mountTimer;
+  bool _ready = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleMount();
+  }
+
+  @override
+  void didUpdateWidget(covariant _DeferredToolContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.tool.id != widget.tool.id) {
+      _ready = false;
+      _scheduleMount();
+    }
+  }
+
+  @override
+  void dispose() {
+    _mountTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_ready) {
+      return _ToolLoadingState(tool: widget.tool);
+    }
+    return KeyedSubtree(
+      key: ValueKey('tool-content-${widget.tool.id}'),
+      child: switch (widget.tool.id) {
+        'notes' => const NotesTool(),
+        'todos' => const TodosTool(),
+        'ledger' => const LedgerTool(),
+        'countdown' => const CountdownTool(),
+        'converter' => const ConverterTool(),
+        'exchangeRate' => const ExchangeRateTool(),
+        'password' => const PasswordTool(),
+        'getToken' => const GetTokenTool(),
+        'pomodoro' => const PomodoroTool(),
+        'dnsLeak' => const DnsLeakTool(),
+        'natTraversal' => const NatTraversalTool(),
+        'phoneManager' || 'bluetoothAudio' => const PhoneManagerTool(),
+        'systemControl' => const SystemControlTool(),
+        'steamStatus' => const SteamStatusTool(),
+        _ => EmptyState(
+          icon: widget.tool.icon,
+          title: '工具暂不可用',
+          message: '当前工具尚未实现，请从左侧选择其他工具。',
+        ),
+      },
+    );
+  }
+
+  void _scheduleMount() {
+    _mountTimer?.cancel();
+    _mountTimer = Timer(deferredToolContentDelay, () {
+      if (mounted) {
+        setState(() => _ready = true);
+      }
+    });
+  }
+}
+
+class _ToolLoadingState extends StatelessWidget {
+  const _ToolLoadingState({required this.tool});
+
+  final ToolDefinition tool;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppPanel(
+      title: '正在打开 ${tool.name}',
+      child: const LinearProgressIndicator(minHeight: 2),
     );
   }
 }
@@ -369,12 +442,37 @@ class LedgerTool extends ConsumerStatefulWidget {
 class _LedgerToolState extends ConsumerState<LedgerTool> {
   final _amountController = TextEditingController();
   final _noteController = TextEditingController();
+  final _alipayAppIdController = TextEditingController();
+  final _alipayPrivateKeyController = TextEditingController();
+  final _alipayPublicKeyController = TextEditingController();
+  final _alipayMethodController = TextEditingController(
+    text: defaultAlipayLedgerMethod,
+  );
+  final _alipayAuthCodeController = TextEditingController();
   String _type = '支出';
+  AlipayLedgerConfig _alipayConfig = const AlipayLedgerConfig();
+  AlipayOAuthToken _alipayToken = const AlipayOAuthToken();
+  List<AlipayBillRow> _alipayPreviewRows = const <AlipayBillRow>[];
+  DateTime _alipayStart = DateTime.now().subtract(const Duration(days: 6));
+  DateTime _alipayEnd = DateTime.now();
+  bool _alipayLoading = false;
+  bool _showPrivateKey = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAlipayState();
+  }
 
   @override
   void dispose() {
     _amountController.dispose();
     _noteController.dispose();
+    _alipayAppIdController.dispose();
+    _alipayPrivateKeyController.dispose();
+    _alipayPublicKeyController.dispose();
+    _alipayMethodController.dispose();
+    _alipayAuthCodeController.dispose();
     super.dispose();
   }
 
@@ -382,12 +480,12 @@ class _LedgerToolState extends ConsumerState<LedgerTool> {
   Widget build(BuildContext context) {
     final database = ref.watch(appDatabaseProvider);
     return _ResponsiveGrid(
-      left: AppPanel(
-        title: '新增账目',
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Column(
+      left: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AppPanel(
+            title: '新增账目',
+            child: Column(
               children: [
                 SegmentedButton<String>(
                   selected: {_type},
@@ -428,8 +526,10 @@ class _LedgerToolState extends ConsumerState<LedgerTool> {
                 ),
               ],
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 12),
+          AppPanel(title: '支付宝导入', child: _buildAlipayImportPanel()),
+        ],
       ),
       right: StreamBuilder<List<LedgerEntry>>(
         stream: database.watchActiveLedgerEntries(),
@@ -519,6 +619,353 @@ class _LedgerToolState extends ConsumerState<LedgerTool> {
         },
       ),
     );
+  }
+
+  Widget _buildAlipayImportPanel() {
+    final status = _alipayStatusText();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text(status)),
+            if (_alipayLoading)
+              const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          initiallyExpanded: !_alipayConfig.isConfigured,
+          title: const Text('支付宝配置'),
+          children: [
+            TextField(
+              controller: _alipayAppIdController,
+              decoration: const InputDecoration(labelText: 'appId'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _alipayPrivateKeyController,
+              maxLines: _showPrivateKey ? 5 : 1,
+              obscureText: !_showPrivateKey,
+              decoration: InputDecoration(
+                labelText: 'privateKeyPem',
+                suffixIcon: IconButton(
+                  tooltip: _showPrivateKey ? '隐藏私钥' : '显示私钥',
+                  onPressed: () =>
+                      setState(() => _showPrivateKey = !_showPrivateKey),
+                  icon: Icon(
+                    _showPrivateKey
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _alipayPublicKeyController,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'alipayPublicKeyPem',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _alipayMethodController,
+              decoration: const InputDecoration(labelText: 'methodName'),
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                onPressed: _alipayLoading ? null : _saveAlipayConfig,
+                icon: const Icon(Icons.save_outlined),
+                label: const Text('保存配置'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilledButton.icon(
+              onPressed: _alipayLoading ? null : _connectAlipay,
+              icon: const Icon(Icons.link_outlined),
+              label: Text(_alipayToken.isAuthorized ? '重新授权' : '连接支付宝'),
+            ),
+            OutlinedButton.icon(
+              onPressed: _alipayLoading ? null : _disconnectAlipay,
+              icon: const Icon(Icons.link_off_outlined),
+              label: const Text('断开连接'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _alipayAuthCodeController,
+          decoration: InputDecoration(
+            labelText: '手动粘贴 auth_code',
+            suffixIcon: IconButton(
+              tooltip: '换取授权',
+              onPressed: _alipayLoading ? null : _exchangeManualAuthCode,
+              icon: const Icon(Icons.key_outlined),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _alipayLoading ? null : () => _pickAlipayDate(true),
+                icon: const Icon(Icons.event_outlined),
+                label: Text(DateFormat('MM-dd').format(_alipayStart)),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _alipayLoading ? null : () => _pickAlipayDate(false),
+                icon: const Icon(Icons.event_available_outlined),
+                label: Text(DateFormat('MM-dd').format(_alipayEnd)),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilledButton.icon(
+              onPressed: _alipayLoading ? null : _queryAlipayPreview,
+              icon: const Icon(Icons.search_outlined),
+              label: const Text('查询预览'),
+            ),
+            OutlinedButton.icon(
+              onPressed: _alipayLoading || _alipayPreviewRows.isEmpty
+                  ? null
+                  : _importAlipayRows,
+              icon: const Icon(Icons.download_done_outlined),
+              label: const Text('导入全部'),
+            ),
+          ],
+        ),
+        if (_alipayPreviewRows.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          const Divider(),
+          for (final row in _alipayPreviewRows.take(8))
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                row.title.isEmpty ? row.category : row.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                '${row.category.isEmpty ? '未分类' : row.category} · ${row.status.isEmpty ? '未知状态' : row.status}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: Text(
+                '${row.type == '收入' ? '+' : '-'}¥${row.amount.toStringAsFixed(2)}',
+                style: TextStyle(
+                  color: row.type == '收入' ? AppColors.good : AppColors.bad,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          if (_alipayPreviewRows.length > 8)
+            Text('还有 ${_alipayPreviewRows.length - 8} 条未显示，导入时会一起处理。'),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _loadAlipayState() async {
+    final repository = ref.read(alipayLedgerRepositoryProvider);
+    final config = await repository.loadConfig();
+    final token = await repository.loadToken();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _alipayConfig = config;
+      _alipayToken = token;
+      _alipayAppIdController.text = config.appId;
+      _alipayPrivateKeyController.text = config.privateKeyPem;
+      _alipayPublicKeyController.text = config.alipayPublicKeyPem;
+      _alipayMethodController.text = config.methodName.trim().isEmpty
+          ? defaultAlipayLedgerMethod
+          : config.methodName;
+    });
+  }
+
+  Future<void> _saveAlipayConfig() async {
+    final config = AlipayLedgerConfig(
+      appId: _alipayAppIdController.text,
+      privateKeyPem: _alipayPrivateKeyController.text,
+      alipayPublicKeyPem: _alipayPublicKeyController.text,
+      methodName: _alipayMethodController.text.trim().isEmpty
+          ? defaultAlipayLedgerMethod
+          : _alipayMethodController.text,
+    );
+    await ref.read(alipayLedgerRepositoryProvider).saveConfig(config);
+    if (!mounted) {
+      return;
+    }
+    setState(() => _alipayConfig = config);
+    _showLedgerSnack('支付宝配置已保存到本机');
+  }
+
+  Future<void> _connectAlipay() async {
+    await _runAlipayAction(() async {
+      await _saveAlipayConfig();
+      final token = await ref
+          .read(alipayLedgerRepositoryProvider)
+          .connectWithBrowser();
+      setState(() => _alipayToken = token);
+      _showLedgerSnack('支付宝授权成功');
+    });
+  }
+
+  Future<void> _exchangeManualAuthCode() async {
+    final code = _alipayAuthCodeController.text.trim();
+    if (code.isEmpty) {
+      _showLedgerSnack('请先粘贴 auth_code');
+      return;
+    }
+    await _runAlipayAction(() async {
+      await _saveAlipayConfig();
+      final token = await ref
+          .read(alipayLedgerRepositoryProvider)
+          .exchangeAuthCode(code);
+      setState(() {
+        _alipayToken = token;
+        _alipayAuthCodeController.clear();
+      });
+      _showLedgerSnack('支付宝授权成功');
+    });
+  }
+
+  Future<void> _disconnectAlipay() async {
+    await ref.read(alipayLedgerRepositoryProvider).clearToken();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _alipayToken = const AlipayOAuthToken();
+      _alipayPreviewRows = const <AlipayBillRow>[];
+    });
+    _showLedgerSnack('已断开支付宝授权');
+  }
+
+  Future<void> _pickAlipayDate(bool isStart) async {
+    final initial = isStart ? _alipayStart : _alipayEnd;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+    setState(() {
+      if (isStart) {
+        _alipayStart = DateTime(picked.year, picked.month, picked.day);
+      } else {
+        _alipayEnd = DateTime(
+          picked.year,
+          picked.month,
+          picked.day,
+          23,
+          59,
+          59,
+        );
+      }
+    });
+  }
+
+  Future<void> _queryAlipayPreview() async {
+    await _runAlipayAction(() async {
+      final preview = await ref
+          .read(alipayLedgerRepositoryProvider)
+          .queryPreview(
+            AlipayLedgerQuery(startTime: _alipayStart, endTime: _alipayEnd),
+          );
+      setState(() => _alipayPreviewRows = preview.rows);
+      _showLedgerSnack(
+        preview.rows.isEmpty
+            ? '该时间段没有可导入的支付宝账单'
+            : '已查询到 ${preview.rows.length} 条支付宝账单',
+      );
+    });
+  }
+
+  Future<void> _importAlipayRows() async {
+    await _runAlipayAction(() async {
+      final result = await ref
+          .read(alipayLedgerRepositoryProvider)
+          .importRows(_alipayPreviewRows);
+      setState(() => _alipayPreviewRows = const <AlipayBillRow>[]);
+      _showLedgerSnack(result.message);
+    });
+  }
+
+  Future<void> _runAlipayAction(Future<void> Function() action) async {
+    if (_alipayLoading) {
+      return;
+    }
+    setState(() => _alipayLoading = true);
+    try {
+      await action();
+    } catch (error) {
+      _showLedgerSnack('$error');
+    } finally {
+      if (mounted) {
+        setState(() => _alipayLoading = false);
+      }
+    }
+  }
+
+  String _alipayStatusText() {
+    if (!_alipayConfig.isConfigured) {
+      return '连接状态：未配置';
+    }
+    if (!_alipayToken.isAuthorized) {
+      return '连接状态：未授权';
+    }
+    if (_alipayToken.isExpired) {
+      return '连接状态：授权过期';
+    }
+    final id = _alipayToken.userId.isNotEmpty
+        ? _maskId(_alipayToken.userId)
+        : _maskId(_alipayToken.openId);
+    return '连接状态：已授权 $id';
+  }
+
+  String _maskId(String value) {
+    if (value.length <= 8) {
+      return value;
+    }
+    return '${value.substring(0, 4)}****${value.substring(value.length - 4)}';
+  }
+
+  void _showLedgerSnack(String message) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showLatestSnackBar(SnackBar(content: Text(message)));
   }
 }
 
@@ -642,13 +1089,8 @@ class ExchangeRateTool extends ConsumerStatefulWidget {
 }
 
 class _ExchangeRateToolState extends ConsumerState<ExchangeRateTool> {
-  static const _panelBg = Color(0xFF07090D);
-  static const _panelSurface = Color(0xFF10141C);
-  static const _panelBorder = Color(0xFF263142);
-  static const _panelText = Color(0xFFE8EEF7);
-  static const _panelMuted = Color(0xFF92A0B4);
-  static const _riseColor = Color(0xFFFF5A67);
-  static const _fallColor = Color(0xFF24C46B);
+  static const _riseColor = Color(0xFFC5534C);
+  static const _fallColor = AppColors.good;
 
   final _amountController = TextEditingController(text: '1');
   String _fromCode = 'CNY';
@@ -679,73 +1121,53 @@ class _ExchangeRateToolState extends ConsumerState<ExchangeRateTool> {
   Widget build(BuildContext context) {
     final amount = double.tryParse(_amountController.text) ?? 0;
     return AppPanel(
-      padding: EdgeInsets.zero,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: _panelBg,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: _panelBorder),
-        ),
-        child: Theme(
-          data: Theme.of(context).copyWith(
-            canvasColor: _panelSurface,
-            colorScheme: Theme.of(
+      title: '汇率换算',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: AppColors.bg,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: _ExchangeHeader(
+              amountController: _amountController,
+              fromCode: _fromCode,
+              targetCodes: _targetCodes,
+              onFromChanged: _changeFromCode,
+              onSwap: _swapPrimaryTarget,
+              onWidgetConfigPressed: _showWidgetConfigDialog,
+              onAddTarget: _addTarget,
+              onTargetChanged: _changeTargetCode,
+              onRemoveTarget: _removeTarget,
+            ),
+          ),
+          const SizedBox(height: 16),
+          for (var i = 0; i < _targetCodes.length; i++) ...[
+            _ExchangeChartCard(
+              key: ValueKey('exchange-chart-${_fromCode}_${_targetCodes[i]}'),
+              fromCode: _fromCode,
+              toCode: _targetCodes[i],
+              amount: amount,
+              seriesFuture: _seriesFutures[_targetCodes[i]],
+              showRangeSelector: i == 0,
+              selectedRange: _range,
+              onRangeChanged: _changeRange,
+              onRetry: () => setState(() => _refreshTarget(_targetCodes[i])),
+            ),
+            if (i != _targetCodes.length - 1) const SizedBox(height: 12),
+          ],
+          const SizedBox(height: 12),
+          Text(
+            '数据源：新浪财经外汇。非官方接口仅供参考，以实际交易报价为准。',
+            style: Theme.of(
               context,
-            ).colorScheme.copyWith(primary: _panelText, onSurface: _panelText),
-            inputDecorationTheme: const InputDecorationTheme(
-              labelStyle: TextStyle(color: _panelMuted),
-              enabledBorder: OutlineInputBorder(
-                borderSide: BorderSide(color: _panelBorder),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderSide: BorderSide(color: _panelText),
-              ),
-            ),
+            ).textTheme.bodySmall?.copyWith(color: AppColors.muted),
           ),
-          child: DefaultTextStyle(
-            style: const TextStyle(color: _panelText),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _ExchangeHeader(
-                  amountController: _amountController,
-                  fromCode: _fromCode,
-                  targetCodes: _targetCodes,
-                  onFromChanged: _changeFromCode,
-                  onSwap: _swapPrimaryTarget,
-                  onAddTarget: _addTarget,
-                  onTargetChanged: _changeTargetCode,
-                  onRemoveTarget: _removeTarget,
-                ),
-                const SizedBox(height: 18),
-                for (var i = 0; i < _targetCodes.length; i++) ...[
-                  _ExchangeChartCard(
-                    key: ValueKey(
-                      'exchange-chart-${_fromCode}_${_targetCodes[i]}',
-                    ),
-                    fromCode: _fromCode,
-                    toCode: _targetCodes[i],
-                    amount: amount,
-                    seriesFuture: _seriesFutures[_targetCodes[i]],
-                    showRangeSelector: i == 0,
-                    selectedRange: _range,
-                    onRangeChanged: _changeRange,
-                    onRetry: () =>
-                        setState(() => _refreshTarget(_targetCodes[i])),
-                  ),
-                  if (i != _targetCodes.length - 1) const SizedBox(height: 12),
-                ],
-                const SizedBox(height: 12),
-                const Text(
-                  '数据源：新浪财经外汇。非官方接口仅供参考，以实际交易报价为准。',
-                  style: TextStyle(color: _panelMuted, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-        ),
+        ],
       ),
     );
   }
@@ -754,6 +1176,30 @@ class _ExchangeRateToolState extends ConsumerState<ExchangeRateTool> {
     if (mounted) {
       setState(() {});
     }
+  }
+
+  Future<void> _showWidgetConfigDialog() async {
+    final initialConfig = await ref
+        .read(exchangeHomeWidgetRepositoryProvider)
+        .loadConfig();
+    if (!mounted) {
+      return;
+    }
+    final nextConfig = await showDialog<ExchangeHomeWidgetConfig>(
+      context: context,
+      builder: (context) =>
+          _ExchangeWidgetConfigDialog(initialConfig: initialConfig),
+    );
+    if (nextConfig == null || !mounted) {
+      return;
+    }
+    await ref.read(exchangeHomeWidgetRepositoryProvider).saveConfig(nextConfig);
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showLatestSnackBar(const SnackBar(content: Text('主页汇率小组件配置已保存')));
   }
 
   void _changeFromCode(String code) {
@@ -864,6 +1310,7 @@ class _ExchangeHeader extends StatelessWidget {
     required this.targetCodes,
     required this.onFromChanged,
     required this.onSwap,
+    required this.onWidgetConfigPressed,
     required this.onAddTarget,
     required this.onTargetChanged,
     required this.onRemoveTarget,
@@ -874,101 +1321,298 @@ class _ExchangeHeader extends StatelessWidget {
   final List<String> targetCodes;
   final ValueChanged<String> onFromChanged;
   final VoidCallback onSwap;
+  final VoidCallback onWidgetConfigPressed;
   final VoidCallback onAddTarget;
   final void Function(int index, String code) onTargetChanged;
   final ValueChanged<int> onRemoveTarget;
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: _ExchangeRateToolState._panelSurface,
-        border: Border.all(color: _ExchangeRateToolState._panelBorder),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '同时查看多个目标货币的实时汇率和历史涨跌。',
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: AppColors.muted),
+        ),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Text(
-              '汇率换算',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: _ExchangeRateToolState._panelText,
-                fontWeight: FontWeight.w700,
+            SizedBox(
+              width: 180,
+              child: TextField(
+                controller: amountController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(labelText: '金额'),
               ),
             ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                SizedBox(
-                  width: 180,
-                  child: TextField(
-                    controller: amountController,
-                    keyboardType: TextInputType.number,
-                    style: const TextStyle(
-                      color: _ExchangeRateToolState._panelText,
-                    ),
-                    decoration: const InputDecoration(labelText: '金额'),
-                  ),
-                ),
-                SizedBox(
-                  width: 220,
-                  child: _CurrencyDropdown(
-                    label: '卖出货币',
-                    value: fromCode,
-                    excluded: const {},
-                    onChanged: onFromChanged,
-                  ),
-                ),
-                IconButton.filledTonal(
-                  tooltip: '互换卖出货币与第一种兑换货币',
-                  onPressed: onSwap,
-                  icon: const Icon(Icons.swap_horiz),
-                ),
-              ],
+            SizedBox(
+              width: 220,
+              child: _CurrencyDropdown(
+                label: '基准货币',
+                value: fromCode,
+                excluded: const {},
+                onChanged: onFromChanged,
+              ),
             ),
-            const SizedBox(height: 12),
-            Column(
-              children: [
-                for (var i = 0; i < targetCodes.length; i++)
-                  Padding(
-                    padding: EdgeInsets.only(top: i == 0 ? 0 : 10),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _CurrencyDropdown(
-                            label: '兑换货币',
-                            value: targetCodes[i],
-                            excluded: {fromCode},
-                            onChanged: (code) => onTargetChanged(i, code),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          tooltip: '移除兑换货币',
-                          onPressed: () => onRemoveTarget(i),
-                          icon: const Icon(Icons.delete_outline),
-                          color: _ExchangeRateToolState._panelMuted,
-                        ),
-                        if (i == targetCodes.length - 1)
-                          IconButton.filled(
-                            tooltip: '添加兑换货币',
-                            onPressed: onAddTarget,
-                            icon: const Icon(Icons.add),
-                          ),
-                      ],
-                    ),
-                  ),
-              ],
+            OutlinedButton.icon(
+              onPressed: onSwap,
+              icon: const Icon(Icons.swap_horiz),
+              label: const Text('与首个目标互换'),
+            ),
+            OutlinedButton.icon(
+              key: const ValueKey('exchange-widget-config-button'),
+              onPressed: onWidgetConfigPressed,
+              icon: const Icon(Icons.widgets_outlined),
+              label: const Text('小组件'),
             ),
           ],
         ),
+        const SizedBox(height: 16),
+        for (var i = 0; i < targetCodes.length; i++) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              border: Border.all(color: AppColors.border),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _CurrencyDropdown(
+                    label: '目标货币 ${i + 1}',
+                    value: targetCodes[i],
+                    excluded: {fromCode},
+                    onChanged: (code) => onTargetChanged(i, code),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  tooltip: '移除兑换货币',
+                  onPressed: () => onRemoveTarget(i),
+                  icon: const Icon(Icons.delete_outline),
+                  color: AppColors.muted,
+                ),
+                if (i == targetCodes.length - 1)
+                  IconButton.filled(
+                    tooltip: '添加兑换货币',
+                    onPressed: onAddTarget,
+                    icon: const Icon(Icons.add),
+                  ),
+              ],
+            ),
+          ),
+          if (i != targetCodes.length - 1) const SizedBox(height: 10),
+        ],
+      ],
+    );
+  }
+}
+
+class _ExchangeWidgetConfigDialog extends StatefulWidget {
+  const _ExchangeWidgetConfigDialog({required this.initialConfig});
+
+  final ExchangeHomeWidgetConfig initialConfig;
+
+  @override
+  State<_ExchangeWidgetConfigDialog> createState() =>
+      _ExchangeWidgetConfigDialogState();
+}
+
+class _ExchangeWidgetConfigDialogState
+    extends State<_ExchangeWidgetConfigDialog> {
+  late final TextEditingController _refreshController;
+  late String _fromCode;
+  late List<String> _targetCodes;
+  String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+    _fromCode = widget.initialConfig.fromCode;
+    _targetCodes = [...widget.initialConfig.targetCodes];
+    _refreshController = TextEditingController(
+      text: widget.initialConfig.refreshSeconds.toString(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _refreshController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final nextTarget = _firstAvailableTarget();
+    return AlertDialog(
+      title: const Text('主页汇率小组件'),
+      content: SizedBox(
+        width: 560,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _CurrencyDropdown(
+                label: '基准货币',
+                value: _fromCode,
+                excluded: const {},
+                onChanged: _changeFromCode,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '主页小组件固定显示 100 单位基准货币。',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: AppColors.muted),
+              ),
+              const SizedBox(height: 16),
+              for (var i = 0; i < _targetCodes.length; i++) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: _CurrencyDropdown(
+                        label: '显示货币 ${i + 1}',
+                        value: _targetCodes[i],
+                        excluded: {_fromCode},
+                        onChanged: (code) => _changeTargetCode(i, code),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      tooltip: '删除小组件货币',
+                      onPressed: () => _removeTarget(i),
+                      icon: const Icon(Icons.delete_outline),
+                    ),
+                  ],
+                ),
+                if (i != _targetCodes.length - 1) const SizedBox(height: 10),
+              ],
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton.filled(
+                  key: const ValueKey('exchange-widget-add-target'),
+                  tooltip: '添加小组件货币',
+                  onPressed: nextTarget == null ? null : _addTarget,
+                  icon: const Icon(Icons.add),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                key: const ValueKey('exchange-widget-refresh-seconds'),
+                controller: _refreshController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: '更新汇率秒数'),
+              ),
+              if (_errorText != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _errorText!,
+                  style: const TextStyle(color: AppColors.bad, fontSize: 12),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(onPressed: _save, child: const Text('保存')),
+      ],
+    );
+  }
+
+  void _changeFromCode(String code) {
+    setState(() {
+      _fromCode = code;
+      _targetCodes.removeWhere((target) => target == code);
+      if (_targetCodes.isEmpty) {
+        _targetCodes.add(_firstAvailableTarget() ?? 'USD');
+      }
+      _errorText = null;
+    });
+  }
+
+  void _changeTargetCode(int index, String code) {
+    if (_targetCodes.contains(code) && _targetCodes[index] != code) {
+      setState(() {
+        _errorText = '该货币已添加到小组件中。';
+      });
+      return;
+    }
+    setState(() {
+      _targetCodes[index] = code;
+      _errorText = null;
+    });
+  }
+
+  void _addTarget() {
+    final next = _firstAvailableTarget();
+    if (next == null) {
+      setState(() {
+        _errorText = '没有更多可添加的货币。';
+      });
+      return;
+    }
+    setState(() {
+      _targetCodes.add(next);
+      _errorText = null;
+    });
+  }
+
+  void _removeTarget(int index) {
+    if (_targetCodes.length == 1) {
+      setState(() {
+        _errorText = '至少保留一种货币。';
+      });
+      return;
+    }
+    setState(() {
+      _targetCodes.removeAt(index);
+      _errorText = null;
+    });
+  }
+
+  void _save() {
+    final refreshSeconds = int.tryParse(_refreshController.text.trim());
+    if (refreshSeconds == null || refreshSeconds <= 0) {
+      setState(() {
+        _errorText = '更新汇率秒数请输入正整数。';
+      });
+      return;
+    }
+    Navigator.of(context).pop(
+      ExchangeHomeWidgetConfig(
+        fromCode: _fromCode,
+        targetCodes: _targetCodes,
+        refreshSeconds: max(
+          refreshSeconds,
+          ExchangeHomeWidgetConfig.minRefreshSeconds,
+        ),
       ),
     );
+  }
+
+  String? _firstAvailableTarget() {
+    for (final currency in exchangeCurrencies) {
+      if (currency.code != _fromCode && !_targetCodes.contains(currency.code)) {
+        return currency.code;
+      }
+    }
+    return null;
   }
 }
 
@@ -989,8 +1633,6 @@ class _CurrencyDropdown extends StatelessWidget {
   Widget build(BuildContext context) {
     return DropdownButtonFormField<String>(
       initialValue: value,
-      dropdownColor: _ExchangeRateToolState._panelSurface,
-      style: const TextStyle(color: _ExchangeRateToolState._panelText),
       decoration: InputDecoration(labelText: label),
       items: [
         for (final currency in exchangeCurrencies)
@@ -1030,10 +1672,10 @@ class _ExchangeChartCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
+    return Container(
       decoration: BoxDecoration(
-        color: _ExchangeRateToolState._panelSurface,
-        border: Border.all(color: _ExchangeRateToolState._panelBorder),
+        color: AppColors.bg,
+        border: Border.all(color: AppColors.border),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Padding(
@@ -1044,7 +1686,7 @@ class _ExchangeChartCard extends StatelessWidget {
             final series = snapshot.data;
             final change = series?.change;
             final trendColor = change == null
-                ? _ExchangeRateToolState._panelMuted
+                ? AppColors.muted
                 : change.isUp
                 ? _ExchangeRateToolState._riseColor
                 : _ExchangeRateToolState._fallColor;
@@ -1061,33 +1703,24 @@ class _ExchangeChartCard extends StatelessWidget {
                           Text(
                             '$fromCode / $toCode',
                             style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(
-                                  color: _ExchangeRateToolState._panelText,
-                                  fontWeight: FontWeight.w700,
-                                ),
+                                ?.copyWith(fontWeight: FontWeight.w700),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             series == null
                                 ? '正在获取新浪财经行情...'
                                 : '${amount.toStringAsFixed(2)} $fromCode = ${(amount * series.latestRate).toStringAsFixed(4)} $toCode',
-                            style: const TextStyle(
-                              color: _ExchangeRateToolState._panelMuted,
-                            ),
+                            style: const TextStyle(color: AppColors.muted),
                           ),
                         ],
                       ),
                     ),
                     if (showRangeSelector)
                       SizedBox(
-                        width: 150,
+                        width: 180,
                         child: DropdownButtonFormField<ExchangeTimeRange>(
                           initialValue: selectedRange,
-                          dropdownColor: _ExchangeRateToolState._panelSurface,
-                          style: const TextStyle(
-                            color: _ExchangeRateToolState._panelText,
-                          ),
-                          decoration: const InputDecoration(labelText: '总时间'),
+                          decoration: const InputDecoration(labelText: '时间范围'),
                           items: [
                             for (final range in exchangeTimeRanges)
                               DropdownMenuItem(
@@ -1117,47 +1750,62 @@ class _ExchangeChartCard extends StatelessWidget {
                 else if (series == null || series.points.isEmpty)
                   _ExchangeErrorState(error: '该货币对暂时无法获取行情。', onRetry: onRetry)
                 else ...[
-                  Row(
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
                     children: [
-                      Text(
-                        series.latestRate.toStringAsFixed(6),
-                        style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(
-                              color: _ExchangeRateToolState._panelText,
-                              fontWeight: FontWeight.w700,
-                            ),
+                      SizedBox(
+                        width: 180,
+                        child: _ExchangeMetricTile(
+                          label: '当前汇率',
+                          value: series.latestRate.toStringAsFixed(6),
+                        ),
                       ),
-                      const SizedBox(width: 12),
-                      Text(
-                        _formatPercent(change!.percentChange),
-                        style: TextStyle(
-                          color: trendColor,
-                          fontWeight: FontWeight.w700,
+                      SizedBox(
+                        width: 180,
+                        child: _ExchangeMetricTile(
+                          label: '涨跌幅',
+                          value: _formatPercent(change!.percentChange),
+                          emphasisColor: trendColor,
+                        ),
+                      ),
+                      SizedBox(
+                        width: 220,
+                        child: _ExchangeMetricTile(
+                          label: '换算结果',
+                          value:
+                              '${(amount * series.latestRate).toStringAsFixed(4)} $toCode',
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
-                  Semantics(
-                    label:
-                        '$fromCode 到 $toCode ${selectedRange.label}涨跌幅 ${_formatPercent(change.percentChange)}',
-                    child: SizedBox(
-                      height: 170,
-                      child: CustomPaint(
-                        painter: _ExchangeLineChartPainter(
-                          points: series.points,
-                          lineColor: trendColor,
-                        ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      border: Border.all(color: AppColors.border),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Semantics(
+                      label:
+                          '$fromCode 到 $toCode ${selectedRange.label}涨跌幅 ${_formatPercent(change.percentChange)}',
+                      child: _InteractiveExchangeChart(
+                        points: series.points,
+                        lineColor: trendColor,
+                        range: selectedRange,
+                        fromCode: fromCode,
+                        toCode: toCode,
+                        amount: amount,
                       ),
                     ),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '${_formatPointTime(series.points.first.time)} - ${_formatPointTime(series.points.last.time)} · ${series.source}',
-                    style: const TextStyle(
-                      color: _ExchangeRateToolState._panelMuted,
-                      fontSize: 12,
-                    ),
+                    '${_formatPointLabel(series.points.first)} - ${_formatPointLabel(series.points.last)} · ${series.source}',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: AppColors.muted),
                   ),
                 ],
               ],
@@ -1176,6 +1824,315 @@ class _ExchangeChartCard extends StatelessWidget {
   String _formatPointTime(DateTime time) {
     return DateFormat('yyyy-MM-dd HH:mm').format(time.toLocal());
   }
+
+  String _formatPointLabel(ExchangeRatePoint point) {
+    if (selectedRange.showsCalendarRange &&
+        !point.periodStart.isAtSameMomentAs(point.periodEnd)) {
+      final dateFormat = DateFormat('yyyy-MM-dd');
+      return '${dateFormat.format(point.periodStart.toLocal())} ~ ${dateFormat.format(point.periodEnd.toLocal())}';
+    }
+    if (selectedRange.usesIntradayLabel) {
+      return _formatPointTime(point.time);
+    }
+    return DateFormat('yyyy-MM-dd').format(point.time.toLocal());
+  }
+}
+
+class _ExchangeMetricTile extends StatelessWidget {
+  const _ExchangeMetricTile({
+    required this.label,
+    required this.value,
+    this.emphasisColor,
+  });
+
+  final String label;
+  final String value;
+  final Color? emphasisColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppColors.muted),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: emphasisColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InteractiveExchangeChart extends StatefulWidget {
+  const _InteractiveExchangeChart({
+    required this.points,
+    required this.lineColor,
+    required this.range,
+    required this.fromCode,
+    required this.toCode,
+    required this.amount,
+  });
+
+  final List<ExchangeRatePoint> points;
+  final Color lineColor;
+  final ExchangeTimeRange range;
+  final String fromCode;
+  final String toCode;
+  final double amount;
+
+  @override
+  State<_InteractiveExchangeChart> createState() =>
+      _InteractiveExchangeChartState();
+}
+
+class _InteractiveExchangeChartState extends State<_InteractiveExchangeChart> {
+  int? _hoveredIndex;
+  bool _showHoverCardOnLeftSide = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      key: ValueKey('exchange-interactive-chart-${widget.toCode}'),
+      height: 170,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final size = Size(constraints.maxWidth, 170);
+          final hoveredPoint = _hoveredIndex == null
+              ? null
+              : widget.points[_hoveredIndex!];
+          return MouseRegion(
+            cursor: SystemMouseCursors.precise,
+            onExit: (_) => setState(() {
+              _hoveredIndex = null;
+              _showHoverCardOnLeftSide = false;
+            }),
+            onHover: (event) {
+              final index = _resolveHoveredIndex(event.localPosition, size);
+              final showHoverCardOnLeftSide = _shouldShowHoverCardOnLeftSide(
+                event.localPosition,
+                size,
+              );
+              if (index != _hoveredIndex ||
+                  showHoverCardOnLeftSide != _showHoverCardOnLeftSide) {
+                setState(() {
+                  _hoveredIndex = index;
+                  _showHoverCardOnLeftSide = showHoverCardOnLeftSide;
+                });
+              }
+            },
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _ExchangeLineChartPainter(
+                      points: widget.points,
+                      lineColor: widget.lineColor,
+                      hoveredIndex: _hoveredIndex,
+                    ),
+                  ),
+                ),
+                if (hoveredPoint != null)
+                  Positioned(
+                    key: const ValueKey('exchange-hover-card'),
+                    top: 8,
+                    left: _showHoverCardOnLeftSide ? 8 : null,
+                    right: _showHoverCardOnLeftSide ? null : 8,
+                    child: IgnorePointer(
+                      child: _ExchangeHoverCard(
+                        fromCode: widget.fromCode,
+                        toCode: widget.toCode,
+                        amount: widget.amount,
+                        range: widget.range,
+                        point: hoveredPoint,
+                        previousPoint: _hoveredIndex! > 0
+                            ? widget.points[_hoveredIndex! - 1]
+                            : null,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  int _resolveHoveredIndex(Offset localPosition, Size size) {
+    if (widget.points.length == 1) {
+      return 0;
+    }
+    final chartRect = _exchangeChartRect(size);
+    final clampedX = localPosition.dx.clamp(chartRect.left, chartRect.right);
+    final progress = (clampedX - chartRect.left) / chartRect.width;
+    return (progress * (widget.points.length - 1)).round();
+  }
+
+  bool _shouldShowHoverCardOnLeftSide(Offset localPosition, Size size) {
+    final chartRect = _exchangeChartRect(size);
+    return localPosition.dx >= chartRect.center.dx;
+  }
+}
+
+class _ExchangeHoverCard extends StatelessWidget {
+  const _ExchangeHoverCard({
+    required this.fromCode,
+    required this.toCode,
+    required this.amount,
+    required this.range,
+    required this.point,
+    required this.previousPoint,
+  });
+
+  final String fromCode;
+  final String toCode;
+  final double amount;
+  final ExchangeTimeRange range;
+  final ExchangeRatePoint point;
+  final ExchangeRatePoint? previousPoint;
+
+  @override
+  Widget build(BuildContext context) {
+    final absoluteChange = previousPoint == null
+        ? null
+        : point.rate - previousPoint!.rate;
+    final percentChange = absoluteChange == null || previousPoint!.rate == 0
+        ? null
+        : absoluteChange / previousPoint!.rate * 100;
+    final changeColor = absoluteChange == null
+        ? AppColors.muted
+        : absoluteChange >= 0
+        ? _ExchangeRateToolState._riseColor
+        : _ExchangeRateToolState._fallColor;
+    return Container(
+      width: 220,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.96),
+        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$fromCode / $toCode',
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 6),
+          _ExchangeHoverRow(label: '时间', value: _formatPointLabel()),
+          _ExchangeHoverRow(
+            label: '当前汇率',
+            value: point.rate.toStringAsFixed(6),
+          ),
+          _ExchangeHoverRow(
+            label: '涨跌额',
+            value: absoluteChange == null
+                ? '--'
+                : _formatSignedNumber(absoluteChange, 6),
+            valueColor: changeColor,
+          ),
+          _ExchangeHoverRow(
+            label: '涨跌幅',
+            value: percentChange == null
+                ? '--'
+                : '${percentChange >= 0 ? '+' : ''}${percentChange.toStringAsFixed(2)}%',
+            valueColor: changeColor,
+          ),
+          _ExchangeHoverRow(
+            label: '换算结果',
+            value: '${(amount * point.rate).toStringAsFixed(4)} $toCode',
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatPointLabel() {
+    if (range.showsCalendarRange &&
+        !point.periodStart.isAtSameMomentAs(point.periodEnd)) {
+      final dateFormat = DateFormat('yyyy-MM-dd');
+      return '${dateFormat.format(point.periodStart.toLocal())} ~ ${dateFormat.format(point.periodEnd.toLocal())}';
+    }
+    if (range.usesIntradayLabel) {
+      return DateFormat('yyyy-MM-dd HH:mm').format(point.time.toLocal());
+    }
+    return DateFormat('yyyy-MM-dd').format(point.time.toLocal());
+  }
+
+  String _formatSignedNumber(double value, int digits) {
+    final sign = value >= 0 ? '+' : '';
+    return '$sign${value.toStringAsFixed(digits)}';
+  }
+}
+
+class _ExchangeHoverRow extends StatelessWidget {
+  const _ExchangeHoverRow({
+    required this.label,
+    required this.value,
+    this.valueColor,
+  });
+
+  final String label;
+  final String value;
+  final Color? valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 52,
+            child: Text(
+              label,
+              style: const TextStyle(color: AppColors.muted, fontSize: 12),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: valueColor ?? AppColors.fg,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ExchangeErrorState extends StatelessWidget {
@@ -1190,17 +2147,22 @@ class _ExchangeErrorState extends StatelessWidget {
       height: 178,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF190D12),
+        color: _ExchangeRateToolState._riseColor.withOpacity(0.08),
         border: Border.all(color: _ExchangeRateToolState._riseColor),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          Icon(
+            Icons.signal_wifi_connected_no_internet_4_outlined,
+            color: _ExchangeRateToolState._riseColor,
+          ),
+          const SizedBox(height: 10),
           Text(
             '$error',
             textAlign: TextAlign.center,
-            style: const TextStyle(color: _ExchangeRateToolState._panelText),
+            style: const TextStyle(color: AppColors.fg),
           ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
@@ -1218,21 +2180,20 @@ class _ExchangeLineChartPainter extends CustomPainter {
   const _ExchangeLineChartPainter({
     required this.points,
     required this.lineColor,
+    this.hoveredIndex,
   });
 
   final List<ExchangeRatePoint> points;
   final Color lineColor;
+  final int? hoveredIndex;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final rates = points.map((point) => point.rate).toList();
-    final minRate = rates.reduce(min);
-    final maxRate = rates.reduce(max);
-    final range = max(maxRate - minRate, 0.0000001);
-    final chartRect = Rect.fromLTWH(0, 8, size.width, size.height - 16);
+    final scale = _buildExchangeChartScale(points);
+    final chartRect = _exchangeChartRect(size);
 
     final gridPaint = Paint()
-      ..color = _ExchangeRateToolState._panelBorder
+      ..color = AppColors.border
       ..strokeWidth = 1;
     for (var i = 0; i < 4; i++) {
       final y = chartRect.top + chartRect.height / 3 * i;
@@ -1245,16 +2206,16 @@ class _ExchangeLineChartPainter extends CustomPainter {
 
     final path = Path();
     for (var i = 0; i < points.length; i++) {
-      final x = points.length == 1
-          ? chartRect.center.dx
-          : chartRect.left + chartRect.width * i / (points.length - 1);
-      final y =
-          chartRect.bottom -
-          ((points[i].rate - minRate) / range) * chartRect.height;
+      final offset = _exchangePointOffset(
+        points: points,
+        index: i,
+        chartRect: chartRect,
+        scale: scale,
+      );
       if (i == 0) {
-        path.moveTo(x, y);
+        path.moveTo(offset.dx, offset.dy);
       } else {
-        path.lineTo(x, y);
+        path.lineTo(offset.dx, offset.dy);
       }
     }
 
@@ -1268,19 +2229,106 @@ class _ExchangeLineChartPainter extends CustomPainter {
 
     final pointPaint = Paint()..color = lineColor;
     for (final index in [0, points.length - 1]) {
-      final x = points.length == 1
-          ? chartRect.center.dx
-          : chartRect.left + chartRect.width * index / (points.length - 1);
-      final y =
-          chartRect.bottom -
-          ((points[index].rate - minRate) / range) * chartRect.height;
-      canvas.drawCircle(Offset(x, y), 3.5, pointPaint);
+      final offset = _exchangePointOffset(
+        points: points,
+        index: index,
+        chartRect: chartRect,
+        scale: scale,
+      );
+      canvas.drawCircle(offset, 3.5, pointPaint);
+    }
+
+    final hovered = hoveredIndex;
+    if (hovered != null && hovered >= 0 && hovered < points.length) {
+      final hoverOffset = _exchangePointOffset(
+        points: points,
+        index: hovered,
+        chartRect: chartRect,
+        scale: scale,
+      );
+      final guidePaint = Paint()
+        ..color = AppColors.muted.withValues(alpha: 0.55)
+        ..strokeWidth = 1;
+      _drawDashedVerticalLine(
+        canvas,
+        x: hoverOffset.dx,
+        top: chartRect.top,
+        bottom: chartRect.bottom,
+        paint: guidePaint,
+      );
+      final haloPaint = Paint()
+        ..color = lineColor.withValues(alpha: 0.16)
+        ..style = PaintingStyle.fill;
+      final selectedPaint = Paint()..color = lineColor;
+      canvas.drawCircle(hoverOffset, 8, haloPaint);
+      canvas.drawCircle(hoverOffset, 4, selectedPaint);
     }
   }
 
   @override
   bool shouldRepaint(covariant _ExchangeLineChartPainter oldDelegate) {
-    return oldDelegate.points != points || oldDelegate.lineColor != lineColor;
+    return oldDelegate.points != points ||
+        oldDelegate.lineColor != lineColor ||
+        oldDelegate.hoveredIndex != hoveredIndex;
+  }
+}
+
+class _ExchangeChartScale {
+  const _ExchangeChartScale({
+    required this.minRate,
+    required this.maxRate,
+    required this.range,
+  });
+
+  final double minRate;
+  final double maxRate;
+  final double range;
+}
+
+_ExchangeChartScale _buildExchangeChartScale(List<ExchangeRatePoint> points) {
+  final rates = points.map((point) => point.rate).toList();
+  final minRate = rates.reduce(min);
+  final maxRate = rates.reduce(max);
+  return _ExchangeChartScale(
+    minRate: minRate,
+    maxRate: maxRate,
+    range: max(maxRate - minRate, 0.0000001),
+  );
+}
+
+Rect _exchangeChartRect(Size size) {
+  return Rect.fromLTWH(0, 8, size.width, size.height - 16);
+}
+
+Offset _exchangePointOffset({
+  required List<ExchangeRatePoint> points,
+  required int index,
+  required Rect chartRect,
+  required _ExchangeChartScale scale,
+}) {
+  final x = points.length == 1
+      ? chartRect.center.dx
+      : chartRect.left + chartRect.width * index / (points.length - 1);
+  final y =
+      chartRect.bottom -
+      ((points[index].rate - scale.minRate) / scale.range) * chartRect.height;
+  return Offset(x, y);
+}
+
+void _drawDashedVerticalLine(
+  Canvas canvas, {
+  required double x,
+  required double top,
+  required double bottom,
+  required Paint paint,
+}) {
+  const dash = 4.0;
+  const gap = 4.0;
+  var y = top;
+  while (y < bottom) {
+    final next = min(y + dash, bottom);
+    canvas.drawLine(Offset(x, y), Offset(x, next), paint);
+    y = next + gap;
   }
 }
 

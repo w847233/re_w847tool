@@ -44,6 +44,21 @@ void main() {
     expect(points.last.rate, 6.82);
   });
 
+  test('时间范围标签顺序符合行情视图', () {
+    expect(exchangeTimeRanges.map((range) => range.label).toList(), [
+      '1分',
+      '日K',
+      '周K',
+      '月K',
+      '年K',
+      '5分',
+      '15分',
+      '30分',
+      '60分',
+      '4H',
+    ]);
+  });
+
   test('实时行情提取 USD 桥接价格', () async {
     final service = SinaForexMarketService(
       client: _FakeClient((request) async {
@@ -104,6 +119,87 @@ var hq_str_fx_seurusd="05:00:00,1.1600,1.1620,1.1600,57,1.1670,1.1673,1.1616,1.1
     expect(series.points, hasLength(2));
     expect(series.points.first.rate, closeTo(1 / 7, 0.000001));
     expect(series.points.last.rate, closeTo(1 / 7.1, 0.000001));
+  });
+
+  test('15 分钟在直连接口为空时会退回到 5 分钟聚合', () async {
+    final service = SinaForexMarketService(
+      client: _FakeClient((request) async {
+        final scale = request.url.queryParameters['scale'];
+        if (scale == '15') {
+          return 'var_fx_susdcny_15=({"msg":"data is empty"})';
+        }
+        return 'var_fx_susdcny_5=([{"d":"2026-05-16 00:00:00","o":"7.0","h":"7.0","l":"7.0","c":"7.0"},{"d":"2026-05-16 00:05:00","o":"7.1","h":"7.1","l":"7.1","c":"7.1"},{"d":"2026-05-16 00:10:00","o":"7.2","h":"7.2","l":"7.2","c":"7.2"},{"d":"2026-05-16 00:15:00","o":"7.3","h":"7.3","l":"7.3","c":"7.3"},{"d":"2026-05-16 00:20:00","o":"7.4","h":"7.4","l":"7.4","c":"7.4"},{"d":"2026-05-16 00:25:00","o":"7.5","h":"7.5","l":"7.5","c":"7.5"}])';
+      }),
+    );
+
+    final series = await service.fetchSeries(
+      fromCode: 'CNY',
+      toCode: 'USD',
+      range: exchangeTimeRangeById('15min'),
+    );
+
+    expect(series.points, hasLength(2));
+    expect(series.points.first.rate, closeTo(1 / 7.2, 0.000001));
+    expect(series.points.first.periodStart, DateTime(2026, 5, 16, 0, 0));
+    expect(series.points.first.periodEnd, DateTime(2026, 5, 16, 0, 10));
+    expect(series.points.last.rate, closeTo(1 / 7.5, 0.000001));
+    expect(series.points.last.periodStart, DateTime(2026, 5, 16, 0, 15));
+    expect(series.points.last.periodEnd, DateTime(2026, 5, 16, 0, 25));
+  });
+
+  test('4H 会由 60 分钟线聚合并保留区间', () async {
+    final service = SinaForexMarketService(
+      client: _FakeClient((request) async {
+        expect(request.url.queryParameters['scale'], '60');
+        return 'var_fx_susdcny_60=([{"d":"2026-05-16 00:00:00","o":"7.0","h":"7.0","l":"7.0","c":"7.0"},{"d":"2026-05-16 01:00:00","o":"7.1","h":"7.1","l":"7.1","c":"7.1"},{"d":"2026-05-16 02:00:00","o":"7.2","h":"7.2","l":"7.2","c":"7.2"},{"d":"2026-05-16 03:00:00","o":"7.3","h":"7.3","l":"7.3","c":"7.3"},{"d":"2026-05-16 04:00:00","o":"7.4","h":"7.4","l":"7.4","c":"7.4"},{"d":"2026-05-16 05:00:00","o":"7.5","h":"7.5","l":"7.5","c":"7.5"},{"d":"2026-05-16 06:00:00","o":"7.6","h":"7.6","l":"7.6","c":"7.6"},{"d":"2026-05-16 07:00:00","o":"7.7","h":"7.7","l":"7.7","c":"7.7"}])';
+      }),
+    );
+
+    final series = await service.fetchSeries(
+      fromCode: 'CNY',
+      toCode: 'USD',
+      range: exchangeTimeRangeById('4h'),
+    );
+
+    expect(series.points, hasLength(2));
+    expect(series.points.first.periodStart, DateTime(2026, 5, 16, 0, 0));
+    expect(series.points.first.periodEnd, DateTime(2026, 5, 16, 3, 0));
+    expect(series.points.last.periodStart, DateTime(2026, 5, 16, 4, 0));
+    expect(series.points.last.periodEnd, DateTime(2026, 5, 16, 7, 0));
+  });
+
+  test('周K、月K、年K 会按日线聚合并保留区间', () async {
+    final service = SinaForexMarketService(
+      client: _FakeClient((request) async {
+        expect(request.url.path, contains('getDayKLine'));
+        return 'var_fx_susdcny_day=("2025-12-31,7.0,7.0,7.0,7.0,|2026-01-02,7.1,7.1,7.1,7.1,|2026-03-30,7.2,7.2,7.2,7.2,|2026-03-31,7.3,7.3,7.3,7.3,|2026-04-06,7.4,7.4,7.4,7.4,|2026-04-30,7.5,7.5,7.5,7.5")';
+      }),
+    );
+
+    final weekly = await service.fetchSeries(
+      fromCode: 'CNY',
+      toCode: 'USD',
+      range: exchangeTimeRangeById('week'),
+    );
+    final monthly = await service.fetchSeries(
+      fromCode: 'CNY',
+      toCode: 'USD',
+      range: exchangeTimeRangeById('month'),
+    );
+    final yearly = await service.fetchSeries(
+      fromCode: 'CNY',
+      toCode: 'USD',
+      range: exchangeTimeRangeById('year'),
+    );
+
+    expect(weekly.points.first.periodStart, DateTime(2025, 12, 31));
+    expect(weekly.points.first.periodEnd, DateTime(2026, 1, 2));
+    expect(monthly.points.last.periodStart, DateTime(2026, 4, 6));
+    expect(monthly.points.last.periodEnd, DateTime(2026, 4, 30));
+    expect(yearly.points.first.periodStart, DateTime(2025, 12, 31));
+    expect(yearly.points.first.periodEnd, DateTime(2025, 12, 31));
+    expect(yearly.points.last.periodStart, DateTime(2026, 1, 2));
+    expect(yearly.points.last.periodEnd, DateTime(2026, 4, 30));
   });
 
   test('空分钟 K 线会抛出中文错误', () {

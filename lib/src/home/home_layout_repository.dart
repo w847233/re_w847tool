@@ -120,6 +120,13 @@ const dashboardWidgetDefinitions = <DashboardWidgetDefinition>[
     ],
   ),
   DashboardWidgetDefinition(
+    id: 'exchangeSnapshot',
+    title: '汇率速览',
+    icon: Icons.currency_exchange_outlined,
+    defaultSize: HomeWidgetSize.wide,
+    allowedSizes: [HomeWidgetSize.wide, HomeWidgetSize.large],
+  ),
+  DashboardWidgetDefinition(
     id: 'monthlyLedger',
     title: '本月收支',
     icon: Icons.account_balance_wallet_outlined,
