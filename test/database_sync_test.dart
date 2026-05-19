@@ -58,7 +58,7 @@ void main() {
     final sourceGetToken = GetTokenRepository(source);
     await sourceGetToken.saveConfig(
       const GetTokenConfig(
-        baseUrl: 'http://example.com/v0/management',
+        baseUrl: 'https://example.com/v0/management',
         batchSize: 20,
         timeout: 45,
         apiRange: '7d',
@@ -172,7 +172,7 @@ void main() {
     final targetCollection = await targetGetToken.loadCollectionSnapshot();
     final targetUsageSnapshot = await targetGetToken.loadUsageSnapshot();
     final targetUsageEvents = await targetGetToken.loadUsageEvents();
-    expect(targetConfig.baseUrl, 'http://example.com/v0/management');
+    expect(targetConfig.baseUrl, 'https://example.com/v0/management');
     expect(targetConfig.tokenSortMode, 'tokens');
     expect(targetConfig.tokenPollingEnabled, isTrue);
     expect(targetSecret.managementKey, isEmpty);
@@ -312,6 +312,10 @@ void main() {
     expect(config.password, 'demo-password');
     expect(saved, contains('dav.example.com'));
     expect(saved, contains('demo-user'));
+    expect(
+      await database.getSettingValue(legacyWebDavSyncConfigKey),
+      equals(null),
+    );
   });
 
   test('同步加密口令会保存到本地设置', () async {
@@ -326,6 +330,40 @@ void main() {
 
     expect(saved, 'secret-passphrase');
     expect(loaded, 'secret-passphrase');
+    expect(
+      await database.getSettingValue(legacySyncPassphraseKey),
+      equals(null),
+    );
+  });
+
+  test('WebDAV 凭证和同步口令只保存在本机，不进入同步快照', () async {
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final repository = SettingsRepository(database);
+
+    await repository.saveWebDavSyncConfig(
+      const WebDavSyncServerConfig(
+        baseUrl: 'https://dav.example.com/remote.php/dav/files/demo/',
+        username: 'demo-user',
+        password: 'demo-password',
+      ),
+    );
+    await repository.saveSyncPassphrase('secret-passphrase');
+
+    final snapshot = await database.exportPlainSnapshot();
+    final settings = snapshot['settings'] as List;
+
+    expect(
+      settings.where(
+        (row) =>
+            row is Map &&
+            (row['key'] == webDavSyncConfigKey ||
+                row['key'] == syncPassphraseKey ||
+                row['key'] == legacyWebDavSyncConfigKey ||
+                row['key'] == legacySyncPassphraseKey),
+      ),
+      isEmpty,
+    );
   });
 
   test('主页布局缺失、损坏或未知小组件时回退到有效默认布局', () async {

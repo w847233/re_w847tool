@@ -8,8 +8,10 @@ import '../sync/webdav_client.dart';
 import 'font_weight_option.dart';
 
 const preferredFontWeightKey = 'preferredFontWeight';
-const webDavSyncConfigKey = 'webDavSyncConfig';
-const syncPassphraseKey = 'syncPassphrase';
+const webDavSyncConfigKey = '${localOnlySettingPrefix}webDavSyncConfig';
+const syncPassphraseKey = '${localOnlySettingPrefix}syncPassphrase';
+const legacyWebDavSyncConfigKey = 'webDavSyncConfig';
+const legacySyncPassphraseKey = 'syncPassphrase';
 
 final settingsRepositoryProvider = Provider<SettingsRepository>((ref) {
   return SettingsRepository(ref.watch(appDatabaseProvider));
@@ -89,14 +91,19 @@ class SettingsRepository {
   }
 
   Stream<WebDavSyncServerConfig> watchWebDavSyncConfig() {
-    return _database
-        .watchSettingValue(webDavSyncConfigKey)
-        .map(parseWebDavSyncConfig);
+    return _database.watchSettingValue(webDavSyncConfigKey).asyncMap((
+      value,
+    ) async {
+      return parseWebDavSyncConfig(
+        value ?? await _database.getSettingValue(legacyWebDavSyncConfigKey),
+      );
+    });
   }
 
   Future<WebDavSyncServerConfig> loadWebDavSyncConfig() async {
     return parseWebDavSyncConfig(
-      await _database.getSettingValue(webDavSyncConfigKey),
+      await _database.getSettingValue(webDavSyncConfigKey) ??
+          await _database.getSettingValue(legacyWebDavSyncConfigKey),
     );
   }
 
@@ -105,14 +112,19 @@ class SettingsRepository {
       webDavSyncConfigKey,
       jsonEncode(config.toJson()),
     );
+    await _database.removeSettingValue(legacyWebDavSyncConfigKey);
   }
 
   Future<String> loadSyncPassphrase() async {
-    return (await _database.getSettingValue(syncPassphraseKey) ?? '').trim();
+    return (await _database.getSettingValue(syncPassphraseKey) ??
+            await _database.getSettingValue(legacySyncPassphraseKey) ??
+            '')
+        .trim();
   }
 
   Future<void> saveSyncPassphrase(String passphrase) async {
     await _database.setSettingValue(syncPassphraseKey, passphrase.trim());
+    await _database.removeSettingValue(legacySyncPassphraseKey);
   }
 
   WebDavSyncServerConfig parseWebDavSyncConfig(String? source) {

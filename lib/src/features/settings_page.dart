@@ -404,7 +404,7 @@ class _NetworkSettingsPanelState extends ConsumerState<_NetworkSettingsPanel> {
                   decoration: const InputDecoration(
                     labelText: 'WebDAV 服务器地址',
                     hintText:
-                        'https://dav.example.com/remote.php/dav/files/name/',
+                        'http://dav.example.com/... 或 https://dav.example.com/...',
                   ),
                 ),
                 const SizedBox(height: 12),

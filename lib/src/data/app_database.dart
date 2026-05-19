@@ -286,6 +286,10 @@ class AppDatabase extends _$AppDatabase {
     return (await query.getSingleOrNull())?.value;
   }
 
+  Future<void> removeSettingValue(String key) {
+    return (delete(appSettings)..where((row) => row.key.equals(key))).go();
+  }
+
   Future<void> setSettingValue(
     String key,
     String value, {
@@ -1221,7 +1225,9 @@ List<Map<String, dynamic>> _list(Object? value) {
 }
 
 bool _isSyncableSettingKey(String key) {
-  return !key.startsWith(localOnlySettingPrefix);
+  return !key.startsWith(localOnlySettingPrefix) &&
+      key != 'webDavSyncConfig' &&
+      key != 'syncPassphrase';
 }
 
 String? _normalizedRichText(String? value) {

@@ -7,10 +7,6 @@ import 'package:http/http.dart' as http;
 import 'get_token_models.dart';
 import 'get_token_repository.dart';
 
-const _defaultBaseUrl = 'http://8.211.131.13:8317/v0/management';
-const _defaultManagementKey = 'EUrd@qq1';
-const _usageEventsBaseUrl = 'http://8.211.131.13:8080/api/v1/usage/events';
-
 final getTokenControllerProvider = Provider<GetTokenController>((ref) {
   final controller = GetTokenController(
     repository: ref.watch(getTokenRepositoryProvider),
@@ -473,6 +469,7 @@ class GetTokenService {
     }
 
     final upstream = await _fetchUsageEvents(
+      config: resolved,
       rangeValue: query.apiRange,
       pageSize: query.pageSize,
       timeout: resolved.timeout,
@@ -720,13 +717,14 @@ class GetTokenService {
   }
 
   Future<Map<String, dynamic>> _fetchUsageEvents({
+    required _ResolvedConfig config,
     required String rangeValue,
     required int pageSize,
     required int timeout,
     String? start,
     String? end,
   }) async {
-    final uri = Uri.parse(_usageEventsBaseUrl).replace(
+    final uri = Uri.parse('${config.baseUrl}/usage/events').replace(
       queryParameters: {
         'range': rangeValue,
         'page': '1',
@@ -741,7 +739,6 @@ class GetTokenService {
         'Accept': '*/*',
         'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6',
         'Sec-GPC': '1',
-        'Referer': 'http://8.211.131.13:8080/',
       },
       timeoutSeconds: timeout,
     );
@@ -802,7 +799,6 @@ class GetTokenService {
       'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6',
       'Authorization': 'Bearer ${config.managementKey}',
       'Sec-GPC': '1',
-      'Referer': 'http://8.211.131.13:8317/management.html',
     };
   }
 
@@ -1610,18 +1606,44 @@ class _ResolvedConfig {
     required GetTokenConfig config,
     required GetTokenSecretConfig secret,
   }) {
+    final baseUrl = _normalizeRequiredRequestUrl(
+      config.baseUrl,
+      label: '\u7ba1\u7406\u63a5\u53e3 baseUrl',
+    );
+    final managementKey = secret.managementKey.trim();
+    if (managementKey.isEmpty) {
+      throw const GetTokenServiceException(
+        '\u8bf7\u5148\u4fdd\u5b58 Bearer Key\uff0c\u4e0d\u518d\u63d0\u4f9b\u5185\u7f6e\u5bc6\u94a5\u3002',
+      );
+    }
     return _ResolvedConfig(
-      baseUrl:
-          (config.baseUrl.trim().isEmpty ? _defaultBaseUrl : config.baseUrl)
-              .replaceFirst(RegExp(r'/+$'), ''),
-      managementKey: secret.managementKey.trim().isEmpty
-          ? _defaultManagementKey
-          : secret.managementKey.trim(),
+      baseUrl: baseUrl,
+      managementKey: managementKey,
       batchSize: config.batchSize <= 0 ? 30 : config.batchSize,
       timeout: config.timeout <= 0 ? 30 : config.timeout,
       limit: config.limit != null && config.limit! > 0 ? config.limit : null,
     );
   }
+}
+
+String _normalizeRequiredRequestUrl(String value, {required String label}) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty) {
+    throw GetTokenServiceException('\u8bf7\u5148\u914d\u7f6e$label');
+  }
+  final uri = Uri.tryParse(trimmed);
+  if (uri == null || !uri.hasScheme || uri.host.trim().isEmpty) {
+    throw GetTokenServiceException(
+      '$label \u683c\u5f0f\u4e0d\u6b63\u786e\uff0c\u8bf7\u8f93\u5165\u5b8c\u6574 URL\u3002',
+    );
+  }
+  final scheme = uri.scheme.toLowerCase();
+  if (scheme != 'https' && scheme != 'http') {
+    throw GetTokenServiceException(
+      '$label \u5fc5\u987b\u4f7f\u7528 http \u6216 https\u3002',
+    );
+  }
+  return trimmed.replaceFirst(RegExp(r'/+$'), '');
 }
 
 class GetTokenCollectionProgress {

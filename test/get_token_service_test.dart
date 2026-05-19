@@ -62,7 +62,7 @@ void main() {
                 'limit_reached': false,
                 'primary_window': {
                   'used_percent': 50,
-                  'reset_at': DateTime.utc(2026, 5, 23).millisecondsSinceEpoch,
+                  'reset_at': DateTime.utc(2026, 5, 30).millisecondsSinceEpoch,
                   'reset_after_seconds': 200000,
                   'limit_window_seconds': 300000,
                 },
@@ -76,7 +76,9 @@ void main() {
     addTearDown(service.dispose);
 
     final result = await service.collectCredentials(
-      config: const GetTokenConfig(baseUrl: 'http://example.com/v0/management'),
+      config: const GetTokenConfig(
+        baseUrl: 'https://example.com/v0/management',
+      ),
       secret: const GetTokenSecretConfig(managementKey: 'secret'),
       previousRows: const [
         GetTokenCredentialRow(
@@ -110,7 +112,7 @@ void main() {
       result.credentials
           .singleWhere((row) => row.authIndex == 'new-auth')
           .resetAt,
-      DateTime.utc(2026, 5, 23),
+      DateTime.utc(2026, 5, 30),
     );
     expect(result.credentials.where((row) => row.isFailure), isEmpty);
   });
@@ -119,7 +121,7 @@ void main() {
     final service = GetTokenService(
       client: _FakeClient((request, body) async {
         final url = request.url.toString();
-        if (url.startsWith('http://8.211.131.13:8080/api/v1/usage/events')) {
+        if (url.startsWith('https://example.com/v0/management/usage/events')) {
           return _jsonResponse({
             'events': [
               {
@@ -165,7 +167,9 @@ void main() {
     addTearDown(service.dispose);
 
     final result = await service.collectTokenUsage(
-      config: const GetTokenConfig(baseUrl: 'http://example.com/v0/management'),
+      config: const GetTokenConfig(
+        baseUrl: 'https://example.com/v0/management',
+      ),
       secret: const GetTokenSecretConfig(managementKey: 'secret'),
       query: const GetTokenUsageQuery(apiRange: '4h', cacheRange: '4h'),
       existingEvents: [
@@ -212,6 +216,81 @@ void main() {
         config: const GetTokenConfig(),
         secret: const GetTokenSecretConfig(),
         query: const GetTokenUsageQuery(apiRange: 'custom', cacheRange: '4h'),
+        existingEvents: const [],
+        previousRows: const [],
+        currentCredentialRows: const [],
+      ),
+      throwsA(isA<GetTokenServiceException>()),
+    );
+  });
+
+  test('额度采集缺少 Bearer Key 时会直接拒绝请求', () async {
+    final service = GetTokenService(
+      client: _FakeClient((request, body) async {
+        throw StateError('should not request network');
+      }),
+    );
+    addTearDown(service.dispose);
+
+    expect(
+      () => service.collectCredentials(
+        config: const GetTokenConfig(
+          baseUrl: 'https://example.com/v0/management',
+        ),
+        secret: const GetTokenSecretConfig(),
+        previousRows: const [],
+      ),
+      throwsA(isA<GetTokenServiceException>()),
+    );
+  });
+
+  test('Token 使用统计通过管理接口请求并允许 http baseUrl', () async {
+    final service = GetTokenService(
+      client: _FakeClient((request, body) async {
+        final url = request.url.toString();
+        if (url.startsWith('http://example.com/v0/management/usage/events')) {
+          return _jsonResponse({
+            'events': const [],
+            'models': const [],
+            'sources': const [],
+            'total_count': 0,
+            'page': 1,
+            'page_size': 500,
+            'total_pages': 0,
+          });
+        }
+        throw StateError('unexpected url: $url');
+      }),
+    );
+    addTearDown(service.dispose);
+
+    final result = await service.collectTokenUsage(
+      config: const GetTokenConfig(baseUrl: 'http://example.com/v0/management'),
+      secret: const GetTokenSecretConfig(managementKey: 'secret'),
+      query: const GetTokenUsageQuery(apiRange: '4h', cacheRange: '4h'),
+      existingEvents: const [],
+      previousRows: const [],
+      currentCredentialRows: const [],
+    );
+
+    expect(result.snapshot.eventTableCount, 0);
+  });
+
+  test('管理接口 baseUrl 使用非 http(s) 协议时会直接拒绝请求', () async {
+    final service = GetTokenService(
+      client: _FakeClient((request, body) async {
+        throw StateError('should not request network');
+      }),
+    );
+    addTearDown(service.dispose);
+
+    expect(
+      () => service.collectTokenUsage(
+        config: const GetTokenConfig(
+          baseUrl: 'ftp://example.com/v0/management',
+        ),
+        secret: const GetTokenSecretConfig(managementKey: 'secret'),
+        query: const GetTokenUsageQuery(apiRange: '4h', cacheRange: '4h'),
         existingEvents: const [],
         previousRows: const [],
         currentCredentialRows: const [],

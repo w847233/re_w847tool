@@ -558,6 +558,7 @@ void main() {
 
     expect(find.text('采集配置'), findsOneWidget);
     expect(find.widgetWithText(TextField, '管理接口 baseUrl'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'Token 使用统计 URL'), findsNothing);
     expect(find.widgetWithText(TextField, 'Bearer Key'), findsOneWidget);
 
     await tester.enterText(
@@ -657,7 +658,7 @@ void main() {
 
     await tester.enterText(
       find.widgetWithText(TextField, 'WebDAV 服务器地址'),
-      'https://dav.example.com/remote.php/dav/files/demo/',
+      'http://dav.example.com/remote.php/dav/files/demo/',
     );
     await tester.enterText(
       find.widgetWithText(TextField, 'WebDAV 用户名'),
@@ -706,7 +707,7 @@ void main() {
 
     await tester.enterText(
       find.widgetWithText(TextField, 'WebDAV 服务器地址'),
-      'https://dav.example.com/remote.php/dav/files/demo/',
+      'http://dav.example.com/remote.php/dav/files/demo/',
     );
     await tester.enterText(
       find.widgetWithText(TextField, 'WebDAV 用户名'),
@@ -723,7 +724,7 @@ void main() {
     expect(find.text('WebDAV 连接成功'), findsOneWidget);
     expect(
       client.lastConfig?.baseUrl,
-      'https://dav.example.com/remote.php/dav/files/demo/',
+      'http://dav.example.com/remote.php/dav/files/demo/',
     );
     expect(client.lastConfig?.username, 'demo-user');
     expect(client.lastConfig?.password, 'demo-password');
@@ -1377,8 +1378,10 @@ class _FakeSinaForexMarketService extends SinaForexMarketService {
     Set<String> currencyCodes,
   ) async {
     if (_latestUsdLegsSequence.isNotEmpty) {
-      final index =
-          _latestUsdLegIndex.clamp(0, _latestUsdLegsSequence.length - 1) as int;
+      final index = _latestUsdLegIndex.clamp(
+        0,
+        _latestUsdLegsSequence.length - 1,
+      );
       final next = _latestUsdLegsSequence[index];
       _latestUsdLegIndex++;
       if (next is Map<String, double>) {
@@ -1396,9 +1399,10 @@ class _FakeSinaForexMarketService extends SinaForexMarketService {
       throw StateError('unsupported fake latest legs payload: $next');
     }
     if (_latestUsdLegsResponses.isNotEmpty) {
-      final index =
-          _latestUsdLegIndex.clamp(0, _latestUsdLegsResponses.length - 1)
-              as int;
+      final index = _latestUsdLegIndex.clamp(
+        0,
+        _latestUsdLegsResponses.length - 1,
+      );
       _latestUsdLegIndex++;
       return _latestUsdLegsResponses[index];
     }
