@@ -117,6 +117,15 @@ const toolDefinitions = <ToolDefinition>[
     syncEnabled: false,
   ),
   ToolDefinition(
+    id: 'gameLibrary',
+    categoryId: 'media',
+    name: '游戏库',
+    description: '整理常玩的游戏和封面',
+    icon: Icons.videogame_asset_outlined,
+    route: '/tools/gameLibrary',
+    syncEnabled: true,
+  ),
+  ToolDefinition(
     id: 'systemControl',
     categoryId: 'system',
     name: '系统控制',

@@ -238,6 +238,62 @@ void main() {
     await _disposeApp(tester);
   });
 
+  testWidgets('主页汇率速览支持点击刷新并更新显示数据', (tester) async {
+    await _setDesktopSize(tester);
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    await ExchangeHomeWidgetRepository(database).saveConfig(
+      const ExchangeHomeWidgetConfig(
+        fromCode: 'CNY',
+        targetCodes: ['JPY'],
+        refreshSeconds: 30,
+      ),
+    );
+    final service = _FakeSinaForexMarketService(
+      latestUsdLegsSequence: [
+        const {'USD': 1, 'CNY': 0.14, 'JPY': 0.0070},
+        const {'USD': 1, 'CNY': 0.14, 'JPY': 0.0065},
+      ],
+    );
+    await _pumpApp(tester, database: database, exchangeService: service);
+    await _pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey('exchange-snapshot-value-JPY')),
+    );
+
+    expect(find.text('2000.0000'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('exchange-snapshot-widget')));
+    await _pumpUi(tester);
+
+    expect(find.text('2153.8462'), findsOneWidget);
+
+    await _disposeApp(tester);
+  });
+
+  testWidgets('主页汇率速览首次刷新失败时显示真实错误原因', (tester) async {
+    await _setDesktopSize(tester);
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    await ExchangeHomeWidgetRepository(database).saveConfig(
+      const ExchangeHomeWidgetConfig(
+        fromCode: 'CNY',
+        targetCodes: ['JPY'],
+        refreshSeconds: 30,
+      ),
+    );
+    final service = _FakeSinaForexMarketService(
+      latestUsdLegsSequence: [const SinaForexMarketException('测试网络故障')],
+    );
+    await _pumpApp(tester, database: database, exchangeService: service);
+    await _pumpUi(tester);
+
+    expect(find.text('更新失败：测试网络故障'), findsOneWidget);
+    expect(find.text('--'), findsOneWidget);
+
+    await _disposeApp(tester);
+  });
+
   testWidgets('汇率图表悬浮卡片会根据左右半区切换显示位置', (tester) async {
     await _setDesktopSize(tester);
     await _pumpApp(tester, exchangeService: _FakeSinaForexMarketService());
@@ -1279,10 +1335,13 @@ class _FakeSteamStatusController extends SteamStatusController {
 class _FakeSinaForexMarketService extends SinaForexMarketService {
   _FakeSinaForexMarketService({
     List<Map<String, double>> latestUsdLegsResponses = const [],
+    List<Object> latestUsdLegsSequence = const [],
   }) : _latestUsdLegsResponses = latestUsdLegsResponses,
+       _latestUsdLegsSequence = latestUsdLegsSequence,
        super(client: _NeverUsedHttpClient());
 
   final List<Map<String, double>> _latestUsdLegsResponses;
+  final List<Object> _latestUsdLegsSequence;
   int _latestUsdLegIndex = 0;
 
   @override
@@ -1317,6 +1376,25 @@ class _FakeSinaForexMarketService extends SinaForexMarketService {
   Future<Map<String, double>> fetchLatestUsdLegs(
     Set<String> currencyCodes,
   ) async {
+    if (_latestUsdLegsSequence.isNotEmpty) {
+      final index =
+          _latestUsdLegIndex.clamp(0, _latestUsdLegsSequence.length - 1) as int;
+      final next = _latestUsdLegsSequence[index];
+      _latestUsdLegIndex++;
+      if (next is Map<String, double>) {
+        return next;
+      }
+      if (next is SinaForexMarketException) {
+        throw next;
+      }
+      if (next is Exception) {
+        throw next;
+      }
+      if (next is Error) {
+        throw next;
+      }
+      throw StateError('unsupported fake latest legs payload: $next');
+    }
     if (_latestUsdLegsResponses.isNotEmpty) {
       final index =
           _latestUsdLegIndex.clamp(0, _latestUsdLegsResponses.length - 1)

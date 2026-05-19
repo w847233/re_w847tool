@@ -10,6 +10,7 @@ import '../data/app_database.dart';
 import '../data/database_provider.dart';
 import '../exchange_rate/exchange_home_widget_repository.dart';
 import '../exchange_rate/sina_forex_market_service.dart';
+import '../game_library/game_library_tool.dart';
 import '../get_token/get_token_tool.dart';
 import '../ledger/alipay_ledger_models.dart';
 import '../ledger/alipay_ledger_repository.dart';
@@ -102,6 +103,7 @@ class _DeferredToolContentState extends State<_DeferredToolContent> {
         'dnsLeak' => const DnsLeakTool(),
         'natTraversal' => const NatTraversalTool(),
         'phoneManager' || 'bluetoothAudio' => const PhoneManagerTool(),
+        'gameLibrary' => const GameLibraryTool(),
         'systemControl' => const SystemControlTool(),
         'steamStatus' => const SteamStatusTool(),
         _ => EmptyState(

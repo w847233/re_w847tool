@@ -76,12 +76,14 @@ class AlipayOpenApiClient {
     if (responseBody is! Map) {
       throw AlipayOpenApiException('支付宝响应缺少 $responseKey');
     }
+    final result = Map<String, dynamic>.from(responseBody);
+    final code = result['code']?.toString();
     _verifyResponseSignature(
       root: root,
       signText: _jsonValueForKey(rawBody, actualResponseKey),
+      requiredSignature:
+          actualResponseKey == responseKey && (code == null || code == '10000'),
     );
-    final result = Map<String, dynamic>.from(responseBody);
-    final code = result['code']?.toString();
     if (code != null && code != '10000') {
       throw AlipayOpenApiException.fromResponse(result);
     }
@@ -144,9 +146,19 @@ class AlipayOpenApiClient {
   void _verifyResponseSignature({
     required Map<String, dynamic> root,
     required String? signText,
+    required bool requiredSignature,
   }) {
     final signature = root['sign']?.toString();
-    if (signature == null || signature.trim().isEmpty || signText == null) {
+    if (signature == null || signature.trim().isEmpty) {
+      if (requiredSignature) {
+        throw const AlipayOpenApiException('支付宝响应缺少签名');
+      }
+      return;
+    }
+    if (signText == null) {
+      if (requiredSignature) {
+        throw const AlipayOpenApiException('支付宝响应验签内容缺失');
+      }
       return;
     }
     try {

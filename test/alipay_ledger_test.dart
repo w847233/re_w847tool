@@ -133,6 +133,30 @@ void main() {
     );
   });
 
+  test('OpenAPI 成功响应缺少签名时拒绝结果', () async {
+    final client = AlipayOpenApiClient(
+      config: AlipayLedgerConfig(
+        appId: '202100',
+        privateKeyPem: _privateKey,
+        alipayPublicKeyPem: _publicKey,
+      ),
+      client: _FakeAlipayHttpClient((_) async {
+        return _jsonResponse('{"alipay_test_response":{"code":"10000"}}');
+      }),
+    );
+
+    await expectLater(
+      client.call('alipay.test', const {}),
+      throwsA(
+        isA<AlipayOpenApiException>().having(
+          (error) => error.message,
+          'message',
+          contains('缺少签名'),
+        ),
+      ),
+    );
+  });
+
   test('OAuth token 响应会解析身份、令牌和过期时间', () {
     final now = DateTime.utc(2026, 5, 18, 12);
     final service = AlipayOAuthService(

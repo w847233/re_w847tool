@@ -817,73 +817,86 @@ class _ExchangeSnapshotWidgetState
     final visibleTargets = widget.config.targetCodes.take(maxTargets).toList();
     final hiddenCount =
         widget.config.targetCodes.length - visibleTargets.length;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                '${ExchangeHomeWidgetConfig.defaultAmount.toStringAsFixed(0)} ${widget.config.fromCode}',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  fontSize: compact ? 13 : null,
-                  height: compact ? 1.05 : null,
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        key: const ValueKey('exchange-snapshot-widget'),
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _refreshRates(resetLoading: true),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${ExchangeHomeWidgetConfig.defaultAmount.toStringAsFixed(0)} ${widget.config.fromCode}',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        fontSize: compact ? 13 : null,
+                        height: compact ? 1.05 : null,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '${widget.config.refreshSeconds}s',
+                    style: TextStyle(
+                      color: AppColors.muted,
+                      fontSize: compact ? 11 : 12,
+                      height: 1,
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: compact ? 4 : 6),
+              if (_loading && _ratesByCode.isEmpty)
+                Text(
+                  '正在获取汇率...',
+                  style: TextStyle(
+                    color: AppColors.muted,
+                    fontSize: compact ? 11 : 12,
+                    height: 1,
+                  ),
+                )
+              else ...[
+                for (final code in visibleTargets) ...[
+                  _ExchangeSnapshotRow(
+                    code: code,
+                    value: _ratesByCode[code],
+                    trend: _trendsByCode[code] ?? _ExchangeTrend.flat,
+                    compact: compact,
+                  ),
+                  SizedBox(height: compact ? 2 : 4),
+                ],
+                if (hiddenCount > 0)
+                  Text(
+                    '还有 $hiddenCount 个币种',
+                    style: TextStyle(
+                      color: AppColors.muted,
+                      fontSize: compact ? 11 : 12,
+                      height: 1,
+                    ),
+                  ),
+              ],
+              SizedBox(height: compact ? 2 : 4),
+              Text(
+                _buildFooterText(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: _errorMessage == null
+                      ? AppColors.muted
+                      : AppColors.bad,
+                  fontSize: compact ? 11 : 12,
+                  height: 1,
                 ),
               ),
-            ),
-            Text(
-              '${widget.config.refreshSeconds}s',
-              style: TextStyle(
-                color: AppColors.muted,
-                fontSize: compact ? 11 : 12,
-                height: 1,
-              ),
-            ),
-          ],
-        ),
-        SizedBox(height: compact ? 4 : 6),
-        if (_loading && _ratesByCode.isEmpty)
-          Text(
-            '正在获取汇率...',
-            style: TextStyle(
-              color: AppColors.muted,
-              fontSize: compact ? 11 : 12,
-              height: 1,
-            ),
-          )
-        else ...[
-          for (final code in visibleTargets) ...[
-            _ExchangeSnapshotRow(
-              code: code,
-              value: _ratesByCode[code],
-              trend: _trendsByCode[code] ?? _ExchangeTrend.flat,
-              compact: compact,
-            ),
-            SizedBox(height: compact ? 2 : 4),
-          ],
-          if (hiddenCount > 0)
-            Text(
-              '还有 $hiddenCount 个币种',
-              style: TextStyle(
-                color: AppColors.muted,
-                fontSize: compact ? 11 : 12,
-                height: 1,
-              ),
-            ),
-        ],
-        SizedBox(height: compact ? 2 : 4),
-        Text(
-          _buildFooterText(),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: _errorMessage == null ? AppColors.muted : AppColors.bad,
-            fontSize: compact ? 11 : 12,
-            height: 1,
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 
@@ -947,11 +960,24 @@ class _ExchangeSnapshotWidgetState
       if (!mounted || requestId != _requestId) {
         return;
       }
+      final detail = _describeRefreshError(error);
+      debugPrint('汇率速览刷新失败：$detail');
       setState(() {
-        _errorMessage = '更新失败，已保留上次结果';
+        _errorMessage = '更新失败：$detail';
         _loading = false;
       });
     }
+  }
+
+  String _describeRefreshError(Object error) {
+    if (error is SinaForexMarketException) {
+      return error.message;
+    }
+    final text = '$error'.trim();
+    if (text.isEmpty) {
+      return '未知错误';
+    }
+    return text;
   }
 
   _ExchangeTrend _compareTrend(double? previous, double next) {
@@ -966,6 +992,9 @@ class _ExchangeSnapshotWidgetState
   }
 
   String _buildFooterText() {
+    if (_loading) {
+      return _ratesByCode.isEmpty ? '正在获取汇率...' : '正在刷新汇率...';
+    }
     if (_errorMessage != null) {
       return _errorMessage!;
     }
